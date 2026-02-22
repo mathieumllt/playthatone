@@ -117,7 +117,7 @@
   <h1><span>__</span>Admin<span>__</span></h1>
   <p class="subtitle" style="margin-bottom:1.5rem">Acceso restringido</p>
   <input type="password" id="token-input" placeholder="Token de acceso" style="margin-bottom:1px">
-  <button class="btn-primary" style="width:100%;margin-top:1px" onclick="login()">Entrar</button>
+  <button class="btn-primary" style="width:100%;margin-top:1px" id="btn-login">Entrar</button>
   <div id="login-error" style="font-size:0.65rem;color:#555;margin-top:0.8rem;letter-spacing:0.1em"></div>
 </div>
 
@@ -136,8 +136,8 @@
 
   <div class="section">
     <div class="section-label">Acciones</div>
-    <button class="btn-reset" style="border-color:#f0ece4" onclick="resetVotes()">Reiniciar todos los votos</button>
-    <button class="btn-reset" onclick="loadStats()">Actualizar estadisticas</button>
+    <button class="btn-reset" style="border-color:#f0ece4" id="btn-reset-votes">Reiniciar todos los votos</button>
+    <button class="btn-reset" id="btn-refresh">Actualizar estadisticas</button>
   </div>
 
   <div class="section">
@@ -154,7 +154,7 @@
     <div class="form-grid" style="margin-top:1px">
       <input type="text" id="new-title" placeholder="Titulo">
       <input type="text" id="new-artist" placeholder="Artista">
-      <button class="btn-primary" onclick="addSong()">Anadir</button>
+      <button class="btn-primary" id="btn-add-song">Anadir</button>
     </div>
     <div style="font-size:0.6rem;color:#333;letter-spacing:0.1em;margin-top:0.5rem">Selecciona un resultado o escribe manualmente</div>
   </div>
@@ -172,8 +172,8 @@
     </div>
     <textarea id="modal-lyrics" placeholder="Las parolas apareceran aqui tras importar, o escribe manualmente..."></textarea>
     <div class="modal-actions">
-      <button class="btn-primary" onclick="saveLyrics()">Guardar</button>
-      <button class="btn-reset" style="flex:1" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" id="btn-save-lyrics">Guardar</button>
+      <button class="btn-reset" style="flex:1" id="btn-close-modal">Cancelar</button>
     </div>
   </div>
 </div>
@@ -201,7 +201,7 @@ async function login() {
     document.getElementById("login-error").textContent = "Token incorrecto";
   }
 }
-document.getElementById("token-input").addEventListener("keydown", function(e) { if (e.key === "Enter") login(); });
+
 
 // API
 async function api(path, method, body) {
@@ -387,6 +387,25 @@ function showToast(msg) {
   t.classList.add("show");
   setTimeout(function() { t.classList.remove("show"); }, 2500);
 }
+
+// Wire up buttons
+document.addEventListener("DOMContentLoaded", function() {
+  var btnLogin = document.getElementById("btn-login");
+  if (btnLogin) btnLogin.addEventListener("click", login);
+  var btnReset = document.getElementById("btn-reset-votes");
+  if (btnReset) btnReset.addEventListener("click", resetVotes);
+  var btnRefresh = document.getElementById("btn-refresh");
+  if (btnRefresh) btnRefresh.addEventListener("click", loadStats);
+  var btnAdd = document.getElementById("btn-add-song");
+  if (btnAdd) btnAdd.addEventListener("click", addSong);
+  var btnSave = document.getElementById("btn-save-lyrics");
+  if (btnSave) btnSave.addEventListener("click", saveLyrics);
+  var btnClose = document.getElementById("btn-close-modal");
+  if (btnClose) btnClose.addEventListener("click", closeModal);
+  var tokenInput = document.getElementById("token-input");
+  if (tokenInput) tokenInput.addEventListener("keydown", function(e) { if (e.key === "Enter") login(); });
+});
+
 </script>
 </body>
 </html>
