@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PlayThatOne // Admin</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Special+Elite&family=Share+Tech+Mono&display=swap');
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0a0a0a;color:#f0ece4;font-family:'Share Tech Mono',monospace;min-height:100vh;padding:2rem}
+  h1{font-family:'Special Elite',cursive;font-size:1.8rem;margin-bottom:.3rem}
+  h1 span{color:#555}
+  .subtitle{font-size:.65rem;color:#555;letter-spacing:.2em;text-transform:uppercase;margin-bottom:2.5rem}
+  #login-screen{max-width:400px;margin:5rem auto;border:1px solid #222;padding:2rem}
+  .section{margin-bottom:3rem}
+  .section-label{font-size:.65rem;letter-spacing:.3em;text-transform:uppercase;color:#555;margin-bottom:1.2rem;display:flex;align-items:center;gap:1rem}
+  .section-label::after{content:'';flex:1;height:1px;background:#1a1a1a}
+  .btn-reset{background:transparent;border:1px solid #555;color:#f0ece4;font-family:'Share Tech Mono',monospace;font-size:.75rem;letter-spacing:.2em;text-transform:uppercase;padding:.8rem 2rem;cursor:pointer;transition:all .15s;display:block;width:100%;margin-bottom:1rem}
+  .btn-reset:hover{background:#f0ece4;color:#0a0a0a;border-color:#f0ece4}
+  .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;margin-bottom:1.5rem}
+  .stat-box{border:1px solid #1a1a1a;padding:1rem;background:#0d0d0d}
+  .stat-value{font-family:'Special Elite',cursive;font-size:2rem}
+  .stat-label{font-size:.6rem;color:#555;letter-spacing:.1em;text-transform:uppercase;margin-top:.2rem}
+  .song-row{border:1px solid #1a1a1a;padding:1rem 1.2rem;margin-bottom:1px;display:grid;grid-template-columns:1fr auto auto auto;align-items:center;gap:1rem;background:#0d0d0d}
+  .song-row-title{font-family:'Special Elite',cursive;font-size:1rem}
+  .song-row-artist{font-size:.65rem;color:#555;margin-top:.2rem}
+  .song-row-votes{font-size:.7rem;color:#888;min-width:60px;text-align:right}
+  .btn-sm{background:transparent;border:1px solid #333;color:#888;font-family:'Share Tech Mono',monospace;font-size:.6rem;letter-spacing:.1em;text-transform:uppercase;padding:.3rem .7rem;cursor:pointer;transition:all .15s}
+  .btn-sm:hover{border-color:#f0ece4;color:#f0ece4}
+  .btn-sm.red:hover{background:#f0ece4;color:#0a0a0a}
+  .form-grid{display:grid;grid-template-columns:1fr 1fr auto;gap:1px;margin-bottom:1rem}
+  input[type=text],input[type=password],textarea{background:#0d0d0d;border:1px solid #222;color:#f0ece4;font-family:'Share Tech Mono',monospace;font-size:.75rem;padding:.7rem 1rem;outline:none;transition:border-color .15s;width:100%}
+  input:focus,textarea:focus{border-color:#555}
+  textarea{resize:vertical;min-height:180px}
+  .btn-primary{background:#f0ece4;border:1px solid #f0ece4;color:#0a0a0a;font-family:'Share Tech Mono',monospace;font-size:.75rem;letter-spacing:.15em;text-transform:uppercase;padding:.7rem 1.5rem;cursor:pointer;white-space:nowrap;transition:all .15s}
+  .btn-primary:hover{background:transparent;color:#f0ece4}
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.92);display:none;align-items:center;justify-content:center;z-index:500;padding:2rem}
+  .overlay.open{display:flex}
+  .modal{background:#0a0a0a;border:1px solid #333;padding:2rem;width:100%;max-width:680px;max-height:90vh;overflow-y:auto}
+  .modal h2{font-family:'Special Elite',cursive;font-size:1.2rem;margin-bottom:1.5rem}
+  .modal-actions{display:flex;gap:1px;margin-top:1rem}
+  .genius-wrap{position:relative;margin-bottom:.5rem}
+  .field-label{font-size:.6rem;letter-spacing:.2em;text-transform:uppercase;color:#555;display:block;margin-bottom:.5rem}
+  .ac-list{position:absolute;top:100%;left:0;right:0;z-index:100;background:#111;border:1px solid #333;border-top:none;display:none}
+  .ac-list.open{display:block}
+  .ac-item{display:flex;align-items:center;gap:.8rem;padding:.7rem 1rem;cursor:pointer;border-bottom:1px solid #1a1a1a;transition:background .1s}
+  .ac-item:last-child{border-bottom:none}
+  .ac-item:hover{background:#1a1a1a}
+  .ac-thumb{width:36px;height:36px;object-fit:cover;border:1px solid #222;flex-shrink:0}
+  .ac-placeholder{width:36px;height:36px;background:#222;display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0}
+  .ac-info{flex:1;min-width:0}
+  .ac-title{font-family:'Special Elite',cursive;font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ac-artist{font-size:.6rem;color:#666;margin-top:.1rem}
+  .ac-badge{font-size:.55rem;letter-spacing:.1em;text-transform:uppercase;color:#555;border:1px solid #333;padding:.2rem .5rem;white-space:nowrap;flex-shrink:0}
+  .status-line{font-size:.65rem;letter-spacing:.1em;color:#555;min-height:1.2rem;margin:.5rem 0 1rem}
+  .divider-or{text-align:center;font-size:.6rem;letter-spacing:.3em;color:#333;text-transform:uppercase;margin:1.2rem 0;position:relative}
+  .divider-or::before,.divider-or::after{content:'';position:absolute;top:50%;width:42%;height:1px;background:#1a1a1a}
+  .divider-or::before{left:0}
+  .divider-or::after{right:0}
+  .toast{position:fixed;bottom:2rem;right:2rem;background:#f0ece4;color:#0a0a0a;padding:.8rem 1.5rem;font-family:'Share Tech Mono',monospace;font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;transform:translateY(100px);opacity:0;transition:all .3s ease;z-index:600}
+  .toast.show{transform:translateY(0);opacity:1}
+  .spinner{display:inline-block;width:9px;height:9px;border:1px solid #333;border-top-color:#888;border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-right:5px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<div id="login-screen">
+  <h1>Admin</h1>
+  <p class="subtitle" style="margin-bottom:1.5rem">Acceso restringido</p>
+  <input type="password" id="token-input" placeholder="Token de acceso" style="margin-bottom:1px">
+  <button class="btn-primary" style="width:100%;margin-top:1px" onclick="login()">Entrar</button>
+  <div id="login-error" style="font-size:.65rem;color:#555;margin-top:.8rem;letter-spacing:.1em"></div>
+</div>
+
+<div id="admin-panel" style="display:none;max-width:900px;margin:0 auto">
+  <h1>PlayThatOne</h1>
+  <p class="subtitle">Panel de control</p>
+
+  <div class="section">
+    <div class="section-label">En directo</div>
+    <div class="stats-row">
+      <div class="stat-box"><div class="stat-value" id="stat-votes">—</div><div class="stat-label">Votos totales</div></div>
+      <div class="stat-box"><div class="stat-value" id="stat-connected">—</div><div class="stat-label">Conectados</div></div>
+      <div class="stat-box"><div class="stat-value" id="stat-songs">—</div><div class="stat-label">Canciones</div></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Acciones</div>
+    <button class="btn-reset" onclick="resetVotes()">⚡ Reiniciar todos los votos</button>
+    <button class="btn-reset" onclick="loadStats()">↻ Actualizar estadísticas</button>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Catálogo</div>
+    <div id="songs-list"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Añadir canción manualmente</div>
+    <div class="form-grid">
+      <input type="text" id="new-title" placeholder="Título">
+      <input type="text" id="new-artist" placeholder="Artista">
+      <button class="btn-primary" onclick="addSong()">Añadir</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="lyrics-overlay">
+  <div class="modal">
+    <h2 id="modal-title">Editar letra</h2>
+    <div class="genius-wrap">
+      <label class="field-label">🎵 Buscar en Genius</label>
+      <input type="text" id="genius-input" placeholder="Busca el título..." autocomplete="off">
+      <div class="ac-list" id="ac-list"></div>
+    </div>
+    <div class="status-line" id="status-line"></div>
+    <div class="divider-or">o escribe manualmente</div>
+    <label class="field-label">Letra</label>
+    <textarea id="modal-lyrics" placeholder="Pega aquí la letra..."></textarea>
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="saveLyrics()">Guardar</button>
+      <button class="btn-reset" style="flex:1" onclick="closeModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let token='',songs=[],editingSongId=null,searchTimer=null;
+
+async function login(){
+  token=document.getElementById('token-input').value.trim();
+  try{
+    const r=await fetch('/admin/stats',{headers:{'Authorization':'Bearer '+token}});
+    if(!r.ok)throw new Error();
+    document.getElementById('login-screen').style.display='none';
+    document.getElementById('admin-panel').style.display='block';
+    loadStats();setInterval(loadStats,5000);
+  }catch{document.getElementById('login-error').textContent='Token incorrecto';}
+}
+document.getElementById('token-input').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+
+async function api(path,method='GET',body=null){
+  const opts={method,headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'}};
+  if(body)opts.body=JSON.stringify(body);
+  const r=await fetch(path,opts);
+  if(!r.ok)throw new Error(await r.text());
+  if(r.status===204)return null;
+  return r.json();
+}
+
+async function loadStats(){
+  try{
+    const d=await api('/admin/stats');
+    songs=d.songs;
+    document.getElementById('stat-votes').textContent=d.total_votes;
+    document.getElementById('stat-connected').textContent=d.connected_clients;
+    document.getElementById('stat-songs').textContent=songs.length;
+    renderSongs();
+  }catch{}
+}
+
+function renderSongs(){
+  const c=document.getElementById('songs-list');c.innerHTML='';
+  songs.forEach(s=>{
+    const row=document.createElement('div');row.className='song-row';
+    row.innerHTML=`<div><div class="song-row-title">${s.title}</div><div class="song-row-artist">${s.artist}</div></div>
+      <div class="song-row-votes">${s.votes} voto${s.votes!==1?'s':''}</div>
+      <button class="btn-sm" onclick="openModal(${s.id},${JSON.stringify(s.title)})">${s.lyrics?'✎ Letra':'+ Letra'}</button>
+      <button class="btn-sm red" onclick="deleteSong(${s.id},${JSON.stringify(s.title)})">✕</button>`;
+    c.appendChild(row);
+  });
+}
+
+async function addSong(){
+  const title=document.getElementById('new-title').value.trim();
+  const artist=document.getElementById('new-artist').value.trim();
+  if(!title||!artist){showToast('Título y artista requeridos');return;}
+  try{
+    await api('/admin/songs','POST',{title,artist,position:songs.length});
+    document.getElementById('new-title').value='';
+    document.getElementById('new-artist').value='';
+    await loadStats();showToast('✓ Canción añadida');
+  }catch{showToast('Error al añadir');}
+}
+
+async function deleteSong(id,title){
+  if(!confirm('¿Eliminar "'+title+'"?'))return;
+  try{await api('/admin/songs/'+id,'DELETE');await loadStats();showToast('Canción eliminada');}
+  catch{showToast('Error');}
+}
+
+async function resetVotes(){
+  if(!confirm('¿Reiniciar TODOS los votos?'))return;
+  try{await api('/admin/reset','POST');await loadStats();showToast('⚡ Votos reiniciados');}
+  catch{showToast('Error');}
+}
+
+function openModal(id,title){
+  editingSongId=id;
+  document.getElementById('modal-title').textContent=title;
+  const s=songs.find(x=>x.id===id);
+  document.getElementById('modal-lyrics').value=s?.lyrics||'';
+  document.getElementById('genius-input').value=title;
+  setStatus('');closeAc();
+  document.getElementById('lyrics-overlay').classList.add('open');
+  setTimeout(()=>geniusSearch(title),400);
+}
+
+function closeModal(){
+  document.getElementById('lyrics-overlay').classList.remove('open');
+  editingSongId=null;closeAc();
+}
+
+async function saveLyrics(){
+  const lyrics=document.getElementById('modal-lyrics').value;
+  try{
+    await api('/admin/songs/'+editingSongId+'/lyrics','POST',{lyrics});
+    await loadStats();closeModal();showToast('✓ Letra guardada');
+  }catch{showToast('Error al guardar');}
+}
+
+// ── Genius autocomplete ──────────────────────────────────────────────────
+const gInput=document.getElementById('genius-input');
+const acList=document.getElementById('ac-list');
+
+gInput.addEventListener('input',()=>{
+  clearTimeout(searchTimer);
+  const q=gInput.value.trim();
+  if(q.length<2){closeAc();return;}
+  searchTimer=setTimeout(()=>geniusSearch(q),380);
+});
+gInput.addEventListener('keydown',e=>{if(e.key==='Escape')closeAc();});
+document.addEventListener('click',e=>{if(!e.target.closest('.genius-wrap'))closeAc();});
+
+async function geniusSearch(q){
+  setStatus('<span class="spinner"></span> Buscando en Genius...');
+  try{
+    const r=await fetch('/admin/genius/search?q='+encodeURIComponent(q),{headers:{'Authorization':'Bearer '+token}});
+    if(!r.ok)throw new Error();
+    const results=await r.json();
+    renderAc(results);
+    setStatus(results.length?results.length+' resultado'+(results.length!==1?'s':'')+' encontrado'+(results.length!==1?'s':''):'Sin resultados en Genius');
+  }catch{setStatus('Error de búsqueda');}
+}
+
+function renderAc(results){
+  acList.innerHTML='';
+  if(!results.length){closeAc();return;}
+  results.forEach(r=>{
+    const item=document.createElement('div');item.className='ac-item';
+    item.innerHTML=`${r.thumbnail?'<img class="ac-thumb" src="'+r.thumbnail+'" alt="">':'<div class="ac-placeholder">♪</div>'}
+      <div class="ac-info"><div class="ac-title">${r.title}</div><div class="ac-artist">${r.artist}</div></div>
+      <div class="ac-badge">Importar letra</div>`;
+    item.addEventListener('click',()=>importLyrics(r));
+    acList.appendChild(item);
+  });
+  acList.classList.add('open');
+}
+
+async function importLyrics(song){
+  closeAc();
+  setStatus('<span class="spinner"></span> Importando letra...');
+  try{
+    const r=await fetch('/admin/genius/lyrics?url='+encodeURIComponent(song.url),{headers:{'Authorization':'Bearer '+token}});
+    if(!r.ok)throw new Error();
+    const d=await r.json();
+    document.getElementById('modal-lyrics').value=d.lyrics;
+    setStatus('✓ Letra importada — '+song.title+' · '+song.artist);
+    showToast('✓ Letra importada desde Genius');
+  }catch{setStatus('Error al importar — prueba manualmente');}
+}
+
+function closeAc(){acList.classList.remove('open');acList.innerHTML='';}
+function setStatus(html){document.getElementById('status-line').innerHTML=html;}
+
+function showToast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2500);
+}
+</script>
+</body>
+</html>
