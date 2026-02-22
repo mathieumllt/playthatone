@@ -354,15 +354,32 @@ async function fetchSuggestions(query, boxId, onSelect) {
     var results = await api("/admin/genius/search?q=" + encodeURIComponent(query));
     if (!results.length) { box.innerHTML = '<div class="ac-msg">Sin resultados</div>'; return; }
     box.innerHTML = "";
-    results.forEach(function(hit) {
+        results.forEach(function(hit) {
       var item = document.createElement("div");
       item.className = "ac-item";
-      item.innerHTML =
-        '<img class="ac-thumb" src="' + (hit.thumbnail || "") + '" alt="" onerror="this.style.display='none'">' +
-        '<div class="ac-info">' +
-          '<div class="ac-title">' + hit.title + '</div>' +
-          '<div class="ac-artist">' + hit.artist + '</div>' +
-        '</div>';
+
+      var img = document.createElement("img");
+      img.className = "ac-thumb";
+      img.src = hit.thumbnail || "";
+      img.alt = "";
+      img.addEventListener("error", function() { this.style.display = "none"; });
+
+      var info = document.createElement("div");
+      info.className = "ac-info";
+
+      var titleEl = document.createElement("div");
+      titleEl.className = "ac-title";
+      titleEl.textContent = hit.title;
+
+      var artistEl = document.createElement("div");
+      artistEl.className = "ac-artist";
+      artistEl.textContent = hit.artist;
+
+      info.appendChild(titleEl);
+      info.appendChild(artistEl);
+      item.appendChild(img);
+      item.appendChild(info);
+
       item.addEventListener("mousedown", function(e) { e.preventDefault(); onSelect(hit); });
       box.appendChild(item);
     });
