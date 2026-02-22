@@ -1,7 +1,5 @@
 # __PlayThatOne__
 
-Application de performance interactive de rue.  
-Les spectateurs votent pour la prochaine chanson en temps réel.
 
 ---
 
