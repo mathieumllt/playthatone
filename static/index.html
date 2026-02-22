@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PlayThatOne</title>
+<title>__PlayThatOne__</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Special+Elite&family=Share+Tech+Mono&display=swap');
 
@@ -12,7 +12,6 @@
   :root {
     --black: #0a0a0a;
     --white: #f0ece4;
-    --grey: #2a2a2a;
     --mid: #888;
   }
 
@@ -27,44 +26,33 @@
 
   body::before {
     content: '';
-    position: fixed;
-    inset: 0;
+    position: fixed; inset: 0;
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.05'/%3E%3C/svg%3E");
-    pointer-events: none;
-    z-index: 100;
-    opacity: 0.4;
+    pointer-events: none; z-index: 100; opacity: 0.4;
   }
 
   header {
     border-bottom: 1px solid #222;
     padding: 2rem;
-    display: flex;
-    align-items: baseline;
-    gap: 1.5rem;
+    display: flex; align-items: baseline; gap: 1.5rem;
   }
 
   .logo {
     font-family: 'Special Elite', cursive;
     font-size: clamp(1.8rem, 5vw, 3rem);
-    letter-spacing: -0.02em;
-    line-height: 1;
+    letter-spacing: -0.02em; line-height: 1;
   }
   .logo span { color: var(--mid); }
 
   .tagline {
-    font-size: 0.7rem;
-    color: var(--mid);
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
+    font-size: 0.7rem; color: var(--mid);
+    letter-spacing: 0.15em; text-transform: uppercase;
   }
 
   .live-dot {
-    width: 8px; height: 8px;
-    background: var(--white);
-    border-radius: 50%;
-    display: inline-block;
-    margin-right: 6px;
-    animation: pulse 1.5s infinite;
+    width: 8px; height: 8px; background: var(--white);
+    border-radius: 50%; display: inline-block;
+    margin-right: 6px; animation: pulse 1.5s infinite;
   }
   .live-dot.disconnected { background: #444; animation: none; }
 
@@ -76,14 +64,9 @@
   main { max-width: 900px; margin: 0 auto; padding: 2rem; }
 
   .section-label {
-    font-size: 0.65rem;
-    letter-spacing: 0.3em;
-    text-transform: uppercase;
-    color: var(--mid);
-    margin-bottom: 1.5rem;
-    display: flex;
-    align-items: center;
-    gap: 1rem;
+    font-size: 0.65rem; letter-spacing: 0.3em; text-transform: uppercase;
+    color: var(--mid); margin-bottom: 1.5rem;
+    display: flex; align-items: center; gap: 1rem;
   }
   .section-label::after { content: ''; flex: 1; height: 1px; background: #222; }
 
@@ -91,26 +74,15 @@
   #vote-section { margin-bottom: 4rem; }
 
   .song-card {
-    border: 1px solid #222;
-    padding: 1.5rem;
-    margin-bottom: 1px;
-    display: grid;
-    grid-template-columns: 1fr auto auto;
-    align-items: center;
-    gap: 1.5rem;
-    cursor: pointer;
-    transition: border-color 0.15s, background 0.15s;
-    position: relative;
-    overflow: hidden;
+    border: 1px solid #222; padding: 1.5rem; margin-bottom: 1px;
+    display: grid; grid-template-columns: 1fr auto auto;
+    align-items: center; gap: 1.5rem;
+    position: relative; overflow: hidden;
+    transition: border-color 0.15s;
   }
   .song-card::before {
-    content: '';
-    position: absolute;
-    left: 0; top: 0; bottom: 0;
-    width: 0;
-    background: #1a1a1a;
-    transition: width 0.4s ease;
-    z-index: 0;
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+    width: 0; background: #1a1a1a; transition: width 0.4s ease; z-index: 0;
   }
   .song-card:hover { border-color: #444; }
   .song-card:hover::before { width: 100%; }
@@ -118,51 +90,32 @@
   .song-card.leading { border-color: #444; }
 
   .song-number { font-size: 0.6rem; color: var(--mid); letter-spacing: 0.1em; }
-
-  .song-title {
-    font-family: 'Special Elite', cursive;
-    font-size: 1.3rem;
-    letter-spacing: 0.02em;
-  }
-
+  .song-title { font-family: 'Special Elite', cursive; font-size: 1.3rem; letter-spacing: 0.02em; }
   .song-artist { font-size: 0.7rem; color: var(--mid); margin-top: 0.2rem; letter-spacing: 0.05em; }
 
   .vote-bar-wrap { width: 120px; display: flex; flex-direction: column; gap: 4px; }
   .vote-bar-bg { height: 2px; background: #222; position: relative; }
   .vote-bar-fill {
-    position: absolute;
-    left: 0; top: 0; bottom: 0;
-    background: var(--white);
-    transition: width 0.5s ease;
+    position: absolute; left: 0; top: 0; bottom: 0;
+    background: var(--white); transition: width 0.5s ease;
   }
   .vote-count { font-size: 0.65rem; color: var(--mid); letter-spacing: 0.1em; }
 
   .btn-vote {
-    background: transparent;
-    border: 1px solid #333;
-    color: var(--white);
-    font-family: 'Share Tech Mono', monospace;
-    font-size: 0.7rem;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    padding: 0.5rem 1rem;
-    cursor: pointer;
-    transition: all 0.15s;
+    background: transparent; border: 1px solid #333; color: var(--white);
+    font-family: 'Share Tech Mono', monospace; font-size: 0.7rem;
+    letter-spacing: 0.15em; text-transform: uppercase;
+    padding: 0.5rem 1rem; cursor: pointer; transition: all 0.15s;
+    white-space: nowrap;
   }
-  .btn-vote:hover, .btn-vote.voted {
-    background: var(--white);
-    color: var(--black);
-    border-color: var(--white);
+  .btn-vote:hover:not(:disabled), .btn-vote.voted {
+    background: var(--white); color: var(--black); border-color: var(--white);
   }
+  .btn-vote:disabled { opacity: 0.4; cursor: default; }
 
   .leading-badge {
-    font-size: 0.55rem;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: var(--mid);
-    border: 1px solid #333;
-    padding: 0.2rem 0.5rem;
-    margin-left: 0.5rem;
+    font-size: 0.55rem; letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--mid); border: 1px solid #333; padding: 0.2rem 0.5rem; margin-left: 0.5rem;
   }
 
   /* LYRICS */
@@ -171,90 +124,61 @@
   .song-selector { display: flex; gap: 1px; margin-bottom: 2rem; flex-wrap: wrap; }
 
   .btn-song-sel {
-    background: transparent;
-    border: 1px solid #222;
-    color: var(--mid);
-    font-family: 'Share Tech Mono', monospace;
-    font-size: 0.7rem;
-    letter-spacing: 0.1em;
-    padding: 0.6rem 1.2rem;
-    cursor: pointer;
-    transition: all 0.15s;
-    text-transform: uppercase;
+    background: transparent; border: 1px solid #222; color: var(--mid);
+    font-family: 'Share Tech Mono', monospace; font-size: 0.7rem;
+    letter-spacing: 0.1em; padding: 0.6rem 1.2rem; cursor: pointer;
+    transition: all 0.15s; text-transform: uppercase;
   }
   .btn-song-sel:hover, .btn-song-sel.active {
-    background: var(--white);
-    color: var(--black);
-    border-color: var(--white);
+    background: var(--white); color: var(--black); border-color: var(--white);
   }
 
   .lyrics-display {
-    border: 1px solid #1a1a1a;
-    padding: 2rem;
-    min-height: 200px;
-    background: #0d0d0d;
+    border: 1px solid #1a1a1a; padding: 2rem;
+    min-height: 200px; background: #0d0d0d;
   }
 
   .lyrics-placeholder {
-    color: var(--mid);
-    font-size: 0.75rem;
-    letter-spacing: 0.1em;
-    text-align: center;
-    margin-top: 3rem;
-    text-transform: uppercase;
+    color: var(--mid); font-size: 0.75rem; letter-spacing: 0.1em;
+    text-align: center; margin-top: 3rem; text-transform: uppercase;
   }
 
   .lyrics-song-title {
-    font-family: 'Special Elite', cursive;
-    font-size: 1.5rem;
-    margin-bottom: 1.5rem;
-    padding-bottom: 1rem;
-    border-bottom: 1px solid #222;
+    font-family: 'Special Elite', cursive; font-size: 1.5rem;
+    margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #222;
   }
 
   .lyrics-text {
     font-family: 'Special Elite', cursive;
-    font-size: 1rem;
-    line-height: 2;
-    white-space: pre-line;
+    font-size: 1.1rem; line-height: 2.2; white-space: pre-line;
+    letter-spacing: 0.02em;
+  }
+
+  /* Sections de paroles */
+  .lyrics-text .section-header {
+    font-size: 0.65rem; letter-spacing: 0.25em; text-transform: uppercase;
+    color: var(--mid); margin-top: 1.5rem; margin-bottom: 0.3rem;
+    display: block;
   }
 
   .lyrics-coming-soon {
-    color: var(--mid);
-    font-size: 0.8rem;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    text-align: center;
-    padding: 3rem 0;
+    color: var(--mid); font-size: 0.8rem; letter-spacing: 0.2em;
+    text-transform: uppercase; text-align: center; padding: 3rem 0;
   }
 
   footer {
-    border-top: 1px solid #1a1a1a;
-    padding: 1.5rem 2rem;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 0.6rem;
-    color: #333;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
+    border-top: 1px solid #1a1a1a; padding: 1.5rem 2rem;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 0.6rem; color: #333; letter-spacing: 0.1em; text-transform: uppercase;
   }
 
   .toast {
-    position: fixed;
-    bottom: 2rem;
-    right: 2rem;
-    background: var(--white);
-    color: var(--black);
-    padding: 0.8rem 1.5rem;
-    font-family: 'Share Tech Mono', monospace;
-    font-size: 0.7rem;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    transform: translateY(100px);
-    opacity: 0;
-    transition: all 0.3s ease;
-    z-index: 200;
+    position: fixed; bottom: 2rem; right: 2rem;
+    background: var(--white); color: var(--black);
+    padding: 0.8rem 1.5rem; font-family: 'Share Tech Mono', monospace;
+    font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase;
+    transform: translateY(100px); opacity: 0;
+    transition: all 0.3s ease; z-index: 200;
   }
   .toast.show { transform: translateY(0); opacity: 1; }
 
@@ -268,7 +192,7 @@
 
 <header>
   <div>
-    <div class="logo">PlayThatOne</div>
+    <div class="logo"><span>__</span>PlayThatOne<span>__</span></div>
     <div class="tagline" style="margin-top:0.5rem">
       <span class="live-dot" id="live-dot"></span>
       <span id="live-label">Conectando...</span>
@@ -292,20 +216,20 @@
 </main>
 
 <footer>
-  <span>PlayThatOne — La calle como escenario</span>
+  <span>__PlayThatOne__ — La calle como escenario</span>
   <span>Cantar juntos sana</span>
 </footer>
 
 <div class="toast" id="toast"></div>
 
 <script>
-  // ── State ────────────────────────────────────────────────────────────────
+  // ── State ──────────────────────────────────────────────────────────────────
   let songs = [];
-  let userVotedId = null;
+  let userVotedId = null;   // null = pas encore voté cette session
   let selectedLyricId = null;
   let ws = null;
 
-  // ── WebSocket ────────────────────────────────────────────────────────────
+  // ── WebSocket ──────────────────────────────────────────────────────────────
   function connectWS() {
     const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
     ws = new WebSocket(`${protocol}://${location.host}/ws`);
@@ -317,11 +241,12 @@
 
     ws.onmessage = (e) => {
       const data = JSON.parse(e.data);
-      if (data.event === 'votes_update' || data.event === 'votes_reset') {
-        if (data.event === 'votes_reset') {
-          userVotedId = null;
-          showToast('🎸 ¡Nueva ronda! Vota la siguiente');
-        }
+      if (data.event === 'votes_reset') {
+        // Reset : tout le monde peut revoter
+        userVotedId = null;
+        showToast('🎸 ¡Nueva ronda! Vota la siguiente');
+      }
+      if (data.songs) {
         songs = data.songs;
         renderVotes();
         renderLyricSelector();
@@ -337,27 +262,38 @@
     ws.onerror = () => ws.close();
   }
 
-  // ── Vote ─────────────────────────────────────────────────────────────────
+  // ── Vote ───────────────────────────────────────────────────────────────────
   async function handleVote(id) {
-    if (userVotedId === id) {
-      showToast('Ya votaste por esta canción');
+    if (userVotedId !== null) {
+      showToast(userVotedId === id ? 'Ya votaste por esta canción' : 'Solo puedes votar una vez');
       return;
     }
+
     try {
-      const res = await fetch(`/vote/${id}`, { method: 'POST' });
+      const res = await fetch(`/vote/${id}`, { method: 'POST', credentials: 'include' });
+
+      if (res.status === 409) {
+        // Le serveur dit qu'on a déjà voté (cookie présent)
+        const data = await res.json();
+        userVotedId = data.voted_for;
+        renderVotes();
+        showToast('Solo puedes votar una vez por ronda');
+        return;
+      }
+
       if (!res.ok) throw new Error();
       userVotedId = id;
+      renderVotes();
       showToast('¡Voto registrado! 🤘');
     } catch {
       showToast('Error — inténtalo de nuevo');
     }
   }
 
-  // ── Render votes ──────────────────────────────────────────────────────────
+  // ── Render votes ───────────────────────────────────────────────────────────
   function renderVotes() {
     const total = songs.reduce((s, c) => s + c.votes, 0);
-    const maxVotes = Math.max(...songs.map(s => s.votes), 1);
-    const leadingId = songs.reduce((best, s) => s.votes > best.votes ? s : best, songs[0])?.id;
+    const leadingId = songs.length ? songs.reduce((best, s) => s.votes > best.votes ? s : best, songs[0]).id : null;
 
     const list = document.getElementById('song-list');
     list.innerHTML = '';
@@ -366,6 +302,7 @@
       const pct = total > 0 ? Math.round((song.votes / total) * 100) : 0;
       const isLeading = song.id === leadingId && total > 0;
       const isVoted = userVotedId === song.id;
+      const hasVoted = userVotedId !== null;
 
       const card = document.createElement('div');
       card.className = 'song-card' + (isLeading ? ' leading' : '');
@@ -381,14 +318,14 @@
           </div>
           <div class="vote-count">${pct}% — ${song.votes} voto${song.votes !== 1 ? 's' : ''}</div>
         </div>
-        <button class="btn-vote ${isVoted ? 'voted' : ''}" data-id="${song.id}">
+        <button class="btn-vote ${isVoted ? 'voted' : ''}" data-id="${song.id}" ${hasVoted && !isVoted ? 'disabled' : ''}>
           ${isVoted ? '✓ Votado' : 'Votar'}
         </button>
       `;
       list.appendChild(card);
     });
 
-    document.querySelectorAll('.btn-vote').forEach(btn => {
+    document.querySelectorAll('.btn-vote:not(:disabled)').forEach(btn => {
       btn.addEventListener('click', e => {
         e.stopPropagation();
         handleVote(parseInt(btn.dataset.id));
@@ -396,7 +333,7 @@
     });
   }
 
-  // ── Lyrics ────────────────────────────────────────────────────────────────
+  // ── Lyrics ─────────────────────────────────────────────────────────────────
   function renderLyricSelector() {
     const sel = document.getElementById('lyric-selector');
     sel.innerHTML = '';
@@ -413,6 +350,11 @@
     });
   }
 
+  function formatLyrics(raw) {
+    // Met en valeur les en-têtes de section [Verse], [Chorus], etc.
+    return raw.replace(/\[([^\]]+)\]/g, '<span class="section-header">$1</span>');
+  }
+
   function renderLyrics() {
     const display = document.getElementById('lyrics-display');
     if (!selectedLyricId) {
@@ -423,12 +365,12 @@
     if (!song) return;
     display.innerHTML = song.lyrics
       ? `<div class="lyrics-song-title">${song.title}</div>
-         <div class="lyrics-text">${song.lyrics}</div>`
+         <div class="lyrics-text">${formatLyrics(song.lyrics)}</div>`
       : `<div class="lyrics-song-title">${song.title}</div>
          <div class="lyrics-coming-soon">Letra disponible pronto —<br>¡Por ahora, escucha y siente!</div>`;
   }
 
-  // ── Toast ─────────────────────────────────────────────────────────────────
+  // ── Toast ──────────────────────────────────────────────────────────────────
   function showToast(msg) {
     const t = document.getElementById('toast');
     t.textContent = msg;
@@ -436,7 +378,7 @@
     setTimeout(() => t.classList.remove('show'), 2500);
   }
 
-  // ── Init ──────────────────────────────────────────────────────────────────
+  // ── Init ───────────────────────────────────────────────────────────────────
   connectWS();
 </script>
 </body>

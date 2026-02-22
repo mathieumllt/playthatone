@@ -1,14 +1,15 @@
 import os
 import json
 import re
+import uuid
 import urllib.request
 import urllib.parse
 from contextlib import asynccontextmanager
 from typing import List
 
-from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect, Header
+from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect, Header, Request, Response, Cookie
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from dotenv import load_dotenv
@@ -22,12 +23,11 @@ load_dotenv()
 ADMIN_TOKEN  = os.getenv("ADMIN_TOKEN", "rockNroll2024")
 GENIUS_TOKEN = os.getenv("GENIUS_TOKEN", "")
 
-# ── Bootstrap DB ────────────────────────────────────────────────────────────
+# ── Bootstrap DB ─────────────────────────────────────────────────────────────
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
-    # Seed 2 chansons si la DB est vide
     db = next(get_db())
     if db.query(Song).count() == 0:
         seed = [
@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="PlayThatOne", lifespan=lifespan)
 
-# ── WebSocket Manager ────────────────────────────────────────────────────────
+# ── WebSocket Manager ─────────────────────────────────────────────────────────
 
 class ConnectionManager:
     def __init__(self):
@@ -52,7 +52,8 @@ class ConnectionManager:
         self.active.append(ws)
 
     def disconnect(self, ws: WebSocket):
-        self.active.remove(ws)
+        if ws in self.active:
+            self.active.remove(ws)
 
     async def broadcast(self, data: dict):
         message = json.dumps(data)
@@ -67,7 +68,7 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def check_admin(authorization: str = Header(None)):
     if authorization != f"Bearer {ADMIN_TOKEN}":
@@ -96,24 +97,47 @@ def get_songs(db: Session = Depends(get_db)):
 
 
 @app.post("/vote/{song_id}", status_code=201)
-async def vote(song_id: int, db: Session = Depends(get_db)):
+async def vote(
+    song_id: int,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+    session_id: str = Cookie(default=None)
+):
+    # Créer un cookie de session si absent
+    if not session_id:
+        session_id = str(uuid.uuid4())
+
     song = db.query(Song).filter(Song.id == song_id).first()
     if not song:
         raise HTTPException(status_code=404, detail="Canción no encontrada")
-    db.add(Vote(song_id=song_id))
+
+    # Vérifier si cette session a déjà voté
+    existing = db.query(Vote).filter(Vote.session_id == session_id).first()
+    if existing:
+        resp = JSONResponse(
+            status_code=409,
+            content={"ok": False, "already_voted": True, "voted_for": existing.song_id}
+        )
+        resp.set_cookie("session_id", session_id, max_age=86400 * 30, httponly=True, samesite="lax")
+        return resp
+
+    db.add(Vote(song_id=song_id, session_id=session_id))
     db.commit()
     await manager.broadcast({"event": "votes_update", "songs": songs_with_votes(db)})
-    return {"ok": True}
+
+    resp = JSONResponse(status_code=201, content={"ok": True})
+    resp.set_cookie("session_id", session_id, max_age=86400 * 30, httponly=True, samesite="lax")
+    return resp
 
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket, db: Session = Depends(get_db)):
     await manager.connect(ws)
-    # Envoie l'état actuel dès la connexion
     await ws.send_text(json.dumps({"event": "votes_update", "songs": songs_with_votes(db)}))
     try:
         while True:
-            await ws.receive_text()   # keep-alive, on ignore ce que le client envoie
+            await ws.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(ws)
 
@@ -125,11 +149,7 @@ def admin_get_songs(db: Session = Depends(get_db), _=Depends(check_admin)):
 
 
 @app.post("/admin/songs", status_code=201)
-async def admin_add_song(
-    body: SongCreate,
-    db: Session = Depends(get_db),
-    _=Depends(check_admin)
-):
+async def admin_add_song(body: SongCreate, db: Session = Depends(get_db), _=Depends(check_admin)):
     song = Song(**body.model_dump())
     db.add(song)
     db.commit()
@@ -139,12 +159,7 @@ async def admin_add_song(
 
 
 @app.patch("/admin/songs/{song_id}")
-async def admin_update_song(
-    song_id: int,
-    body: SongUpdate,
-    db: Session = Depends(get_db),
-    _=Depends(check_admin)
-):
+async def admin_update_song(song_id: int, body: SongUpdate, db: Session = Depends(get_db), _=Depends(check_admin)):
     song = db.query(Song).filter(Song.id == song_id).first()
     if not song:
         raise HTTPException(status_code=404, detail="Canción no encontrada")
@@ -156,11 +171,7 @@ async def admin_update_song(
 
 
 @app.delete("/admin/songs/{song_id}", status_code=204)
-async def admin_delete_song(
-    song_id: int,
-    db: Session = Depends(get_db),
-    _=Depends(check_admin)
-):
+async def admin_delete_song(song_id: int, db: Session = Depends(get_db), _=Depends(check_admin)):
     song = db.query(Song).filter(Song.id == song_id).first()
     if not song:
         raise HTTPException(status_code=404, detail="Canción no encontrada")
@@ -171,12 +182,7 @@ async def admin_delete_song(
 
 
 @app.post("/admin/songs/{song_id}/lyrics")
-async def admin_update_lyrics(
-    song_id: int,
-    body: LyricsUpdate,
-    db: Session = Depends(get_db),
-    _=Depends(check_admin)
-):
+async def admin_update_lyrics(song_id: int, body: LyricsUpdate, db: Session = Depends(get_db), _=Depends(check_admin)):
     song = db.query(Song).filter(Song.id == song_id).first()
     if not song:
         raise HTTPException(status_code=404, detail="Canción no encontrada")
@@ -190,8 +196,14 @@ async def admin_update_lyrics(
 async def admin_reset_votes(db: Session = Depends(get_db), _=Depends(check_admin)):
     db.query(Vote).delete()
     db.commit()
-    await manager.broadcast({"event": "votes_reset", "songs": songs_with_votes(db)})
-    return {"ok": True, "message": "Votes reiniciados"}
+    # Broadcast avec reset_token pour que les clients effacent leur cookie de vote
+    reset_token = str(uuid.uuid4())
+    await manager.broadcast({
+        "event": "votes_reset",
+        "reset_token": reset_token,
+        "songs": songs_with_votes(db)
+    })
+    return {"ok": True, "reset_token": reset_token}
 
 
 @app.get("/admin/stats")
@@ -205,28 +217,79 @@ def admin_stats(db: Session = Depends(get_db), _=Depends(check_admin)):
     }
 
 
-# ── Genius API ───────────────────────────────────────────────────────────────
+# ── Genius API ────────────────────────────────────────────────────────────────
 
 def genius_request(path: str) -> dict:
     url = f"https://api.genius.com{path}"
-    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {GENIUS_TOKEN}"})
+    req = urllib.request.Request(url, headers={
+        "Authorization": f"Bearer {GENIUS_TOKEN}",
+        "User-Agent": "Mozilla/5.0"
+    })
     with urllib.request.urlopen(req, timeout=8) as r:
         return json.loads(r.read().decode())
 
 
 def scrape_lyrics(song_url: str) -> str:
-    req = urllib.request.Request(song_url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=10) as r:
-        html = r.read().decode("utf-8", errors="ignore")
-    containers = re.findall(r'data-lyrics-container="true"[^>]*>(.*?)</div>', html, re.DOTALL)
-    if not containers:
-        return ""
-    text = "\n".join(containers)
-    text = re.sub(r"<br\s*/?>", "\n", text)
-    text = re.sub(r"<[^>]+>", "", text)
-    text = text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&#x27;", "'").replace("&quot;", '"')
-    text = re.sub(r"\n{3,}", "\n\n", text).strip()
-    return text
+    """Scrape lyrics from Genius page with improved parsing."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Accept-Encoding": "gzip, deflate",
+        "Connection": "keep-alive",
+    }
+    req = urllib.request.Request(song_url, headers=headers)
+    with urllib.request.urlopen(req, timeout=15) as r:
+        raw = r.read()
+        # Gérer gzip
+        if r.headers.get("Content-Encoding") == "gzip":
+            import gzip
+            raw = gzip.decompress(raw)
+        html = raw.decode("utf-8", errors="ignore")
+
+    # Méthode 1 : data-lyrics-container
+    containers = re.findall(
+        r'data-lyrics-container="true"[^>]*>([\s\S]*?)</div>',
+        html
+    )
+    if containers:
+        text = "\n".join(containers)
+        text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+        text = re.sub(r"<[^>]+>", "", text)
+        text = re.sub(r"&amp;", "&", text)
+        text = re.sub(r"&lt;", "<", text)
+        text = re.sub(r"&gt;", ">", text)
+        text = re.sub(r"&#x27;", "'", text)
+        text = re.sub(r"&quot;", '"', text)
+        text = re.sub(r"\n{3,}", "\n\n", text).strip()
+        if len(text) > 100:
+            return text
+
+    # Méthode 2 : JSON embarqué dans la page
+    json_match = re.search(r'"lyrics":\{"dom":\{"tag":"root","children":([\s\S]+?)\},"tracking_data"', html)
+    if json_match:
+        try:
+            children = json.loads(json_match.group(1))
+            def extract(node):
+                if isinstance(node, str):
+                    return node
+                if isinstance(node, dict):
+                    tag = node.get("tag", "")
+                    children = node.get("children", [])
+                    parts = [extract(c) for c in children]
+                    if tag == "br":
+                        return "\n"
+                    return "".join(parts)
+                if isinstance(node, list):
+                    return "".join(extract(c) for c in node)
+                return ""
+            text = extract(children).strip()
+            if len(text) > 100:
+                return text
+        except Exception:
+            pass
+
+    return ""
 
 
 @app.get("/admin/genius/search")
@@ -247,7 +310,7 @@ def genius_search(q: str, _=Depends(check_admin)):
             "thumbnail": h["result"].get("song_art_image_thumbnail_url", ""),
         } for h in hits]
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Erreur Genius : {e}")
+        raise HTTPException(status_code=502, detail=f"Erreur Genius search : {e}")
 
 
 @app.get("/admin/genius/lyrics")
@@ -257,12 +320,13 @@ def genius_lyrics(url: str, _=Depends(check_admin)):
     try:
         lyrics = scrape_lyrics(url)
         if not lyrics:
-            raise HTTPException(status_code=404, detail="Paroles introuvables")
+            raise HTTPException(status_code=404, detail="Paroles introuvables — essaie une autre version de la chanson")
         return {"lyrics": lyrics}
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Erreur scraping : {e}")
+
 
 # ── Static / SPA ──────────────────────────────────────────────────────────────
 
