@@ -232,14 +232,39 @@ function renderSongs() {
   songs.forEach(function(song) {
     var row = document.createElement("div");
     row.className = "song-row";
-    row.innerHTML =
-      '<div>' +
-        '<div class="song-row-title">' + song.title + '</div>' +
-        '<div class="song-row-artist">' + song.artist + '</div>' +
-      '</div>' +
-      '<div class="song-row-votes">' + song.votes + ' voto' + (song.votes !== 1 ? 's' : '') + '</div>' +
-      '<button class="btn-sm" onclick="openLyricsModal(' + song.id + ')">' + (song.lyrics ? 'Letra' : '+ Letra') + '</button>' +
-      '<button class="btn-sm red" onclick="deleteSong(' + song.id + ', '' + song.title.replace(/'/g, "\\'") + '')">X</button>';
+
+    var info = document.createElement("div");
+    var titleEl = document.createElement("div");
+    titleEl.className = "song-row-title";
+    titleEl.textContent = song.title;
+    var artistEl = document.createElement("div");
+    artistEl.className = "song-row-artist";
+    artistEl.textContent = song.artist;
+    info.appendChild(titleEl);
+    info.appendChild(artistEl);
+
+    var votesEl = document.createElement("div");
+    votesEl.className = "song-row-votes";
+    votesEl.textContent = song.votes + " voto" + (song.votes !== 1 ? "s" : "");
+
+    var btnLyrics = document.createElement("button");
+    btnLyrics.className = "btn-sm";
+    btnLyrics.textContent = song.lyrics ? "Letra" : "+ Letra";
+    (function(id) {
+      btnLyrics.addEventListener("click", function() { openLyricsModal(id); });
+    })(song.id);
+
+    var btnDelete = document.createElement("button");
+    btnDelete.className = "btn-sm red";
+    btnDelete.textContent = "Eliminar";
+    (function(id, title) {
+      btnDelete.addEventListener("click", function() { deleteSong(id, title); });
+    })(song.id, song.title);
+
+    row.appendChild(info);
+    row.appendChild(votesEl);
+    row.appendChild(btnLyrics);
+    row.appendChild(btnDelete);
     container.appendChild(row);
   });
 }
