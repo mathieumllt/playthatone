@@ -109,7 +109,26 @@
 
   @keyframes spin { to { transform: rotate(360deg); } }
   .spinner { display: inline-block; width: 10px; height: 10px; border: 1px solid #555; border-top-color: #f0ece4; border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 6px; vertical-align: middle; }
+
+  /* QR CODE */
+  .qr-wrap {
+    display: flex; gap: 3rem; align-items: flex-start; flex-wrap: wrap;
+  }
+  .qr-box {
+    background: #f0ece4; padding: 1.2rem;
+    display: inline-block; line-height: 0;
+    transition: background 0.2s;
+  }
+  .qr-url {
+    font-size: 0.65rem; color: #555; letter-spacing: 0.1em;
+    margin-top: 0.8rem; word-break: break-all;
+  }
+  .qr-actions { display: flex; flex-direction: column; gap: 1px; justify-content: flex-start; margin-top: 0; }
+  .qr-actions .btn-reset { margin-bottom: 0; }
+  .qr-input-row { display: flex; gap: 1px; margin-bottom: 1rem; }
+  .qr-input-row input { flex: 1; }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
 
@@ -138,6 +157,25 @@
     <div class="section-label">Acciones</div>
     <button class="btn-reset" style="border-color:#f0ece4" id="btn-reset-votes">Reiniciar todos los votos</button>
     <button class="btn-reset" id="btn-refresh">Actualizar estadisticas</button>
+  </div>
+
+  <div class="section">
+    <div class="section-label">QR Code — comparte con el publico</div>
+    <div class="qr-input-row">
+      <input type="text" id="qr-url-input" placeholder="URL de la app (se detecta automaticamente)">
+      <button class="btn-primary" onclick="generateQR()">Generar</button>
+    </div>
+    <div class="qr-wrap">
+      <div>
+        <div class="qr-box" id="qr-container"></div>
+        <div class="qr-url" id="qr-url-display"></div>
+      </div>
+      <div class="qr-actions" id="qr-actions" style="display:none">
+        <button class="btn-reset" onclick="printQR()">Imprimir QR</button>
+        <button class="btn-reset" onclick="downloadQR()">Descargar imagen</button>
+        <button class="btn-reset" onclick="copyQRUrl()">Copiar URL</button>
+      </div>
+    </div>
   </div>
 
   <div class="section">
@@ -422,6 +460,83 @@ document.addEventListener("click", function(e) {
   }
 });
 
+// QR CODE
+var qrInstance = null;
+
+function generateQR() {
+  var url = document.getElementById("qr-url-input").value.trim();
+  if (!url) url = window.location.origin;
+
+  var container = document.getElementById("qr-container");
+  var display = document.getElementById("qr-url-display");
+  var actions = document.getElementById("qr-actions");
+
+  container.innerHTML = "";
+
+  qrInstance = new QRCode(container, {
+    text: url,
+    width: 200,
+    height: 200,
+    colorDark: "#0a0a0a",
+    colorLight: "#f0ece4",
+    correctLevel: QRCode.CorrectLevel.H
+  });
+
+  display.textContent = url;
+  actions.style.display = "flex";
+  showToast("QR generado");
+}
+
+function printQR() {
+  var url = document.getElementById("qr-url-input").value.trim() || window.location.origin;
+  var img = document.querySelector("#qr-container img");
+  if (!img) { showToast("Genera el QR primero"); return; }
+  var win = window.open("", "_blank");
+  win.document.write(
+    "<html><head><title>PlayThatOne QR</title>" +
+    "<style>body{margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#f0ece4;font-family:monospace;gap:1.5rem;}" +
+    "img{width:280px;height:280px}" +
+    "p{font-size:0.8rem;letter-spacing:0.15em;color:#333;text-transform:uppercase;text-align:center;max-width:300px}" +
+    "h2{font-size:1.5rem;letter-spacing:0.05em;color:#0a0a0a;margin:0}" +
+    "</style></head><body>" +
+    "<h2>PlayThatOne</h2>" +
+    "<img src='" + img.src + "'>" +
+    "<p>" + url + "</p>" +
+    "<p>Escanea para votar la proxima cancion</p>" +
+    "</body></html>"
+  );
+  win.document.close();
+  win.focus();
+  setTimeout(function() { win.print(); }, 500);
+}
+
+function downloadQR() {
+  var canvas = document.querySelector("#qr-container canvas");
+  var img = document.querySelector("#qr-container img");
+  if (canvas) {
+    var link = document.createElement("a");
+    link.download = "playthatone-qr.png";
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+  } else if (img) {
+    var link = document.createElement("a");
+    link.download = "playthatone-qr.png";
+    link.href = img.src;
+    link.click();
+  } else {
+    showToast("Genera el QR primero");
+  }
+}
+
+function copyQRUrl() {
+  var url = document.getElementById("qr-url-input").value.trim() || window.location.origin;
+  navigator.clipboard.writeText(url).then(function() {
+    showToast("URL copiada");
+  }).catch(function() {
+    showToast(url);
+  });
+}
+
 // TOAST
 function showToast(msg) {
   var t = document.getElementById("toast");
@@ -432,6 +547,10 @@ function showToast(msg) {
 
 // Wire up buttons
 document.addEventListener("DOMContentLoaded", function() {
+  // Auto-fill QR URL
+  var qrInput = document.getElementById("qr-url-input");
+  if (qrInput) qrInput.value = window.location.origin;
+
   var btnLogin = document.getElementById("btn-login");
   if (btnLogin) btnLogin.addEventListener("click", login);
   var btnReset = document.getElementById("btn-reset-votes");
