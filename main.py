@@ -315,6 +315,49 @@ def scrape_lyrics(song_url: str) -> str:
     return ""
 
 
+def search_chartlyrics(artist: str, title: str) -> str:
+    """Search ChartLyrics API - free, no token needed."""
+    try:
+        params = urllib.parse.urlencode({"lyricsartist": artist, "lyricssong": title})
+        url = f"https://api.chartlyrics.com/apiv1.asmx/SearchLyricDirect?{params}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            xml = r.read().decode("utf-8", errors="ignore")
+        # Extract lyrics from XML
+        match = re.search("<Lyric>(.*?)</Lyric>", xml, re.DOTALL)
+        if match:
+            lyrics = match.group(1).strip()
+            if len(lyrics) > 50:
+                return lyrics
+    except Exception:
+        pass
+    return ""
+
+
+def search_chartlyrics_list(query: str) -> list:
+    """Search ChartLyrics for song suggestions."""
+    try:
+        params = urllib.parse.urlencode({"lyricText": query})
+        url = f"https://api.chartlyrics.com/apiv1.asmx/SearchLyric?{params}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            xml = r.read().decode("utf-8", errors="ignore")
+        results = []
+        artists = re.findall("<Artist>(.*?)</Artist>", xml)
+        songs_found = re.findall("<Song>(.*?)</Song>", xml)
+        ids = re.findall("<LyricId>(.*?)</LyricId>", xml)
+        for i in range(min(len(artists), len(songs_found), len(ids), 8)):
+            if artists[i] and songs_found[i] and ids[i]:
+                results.append({
+                    "title": songs_found[i].strip(),
+                    "artist": artists[i].strip(),
+                    "chartlyrics_id": ids[i].strip(),
+                })
+        return results[:8]
+    except Exception:
+        return []
+
+
 @app.get("/admin/genius/search")
 def genius_search(q: str, _=Depends(check_admin)):
     if not GENIUS_TOKEN:
@@ -349,6 +392,26 @@ def genius_lyrics(url: str, _=Depends(check_admin)):
         raise
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Erreur scraping : {e}")
+
+
+# ── ChartLyrics API (free fallback) ──────────────────────────────────────────
+
+@app.get("/admin/chartlyrics/search")
+def chartlyrics_search(q: str, _=Depends(check_admin)):
+    if not q or len(q) < 2:
+        return []
+    results = search_chartlyrics_list(q)
+    if not results:
+        raise HTTPException(status_code=404, detail="Sin resultados en ChartLyrics")
+    return results
+
+
+@app.get("/admin/chartlyrics/lyrics")
+def chartlyrics_lyrics(artist: str, title: str, _=Depends(check_admin)):
+    lyrics = search_chartlyrics(artist, title)
+    if not lyrics:
+        raise HTTPException(status_code=404, detail="Paroles introuvables sur ChartLyrics")
+    return {"lyrics": lyrics}
 
 
 # ── Static / SPA ──────────────────────────────────────────────────────────────

@@ -53,6 +53,7 @@
   }
   .btn-sm:hover { border-color: #f0ece4; color: #f0ece4; }
   .btn-sm.red:hover { background: #f0ece4; color: #0a0a0a; }
+  .source-tab.active { background: #f0ece4; color: #0a0a0a; border-color: #f0ece4; }
 
   .form-grid { display: grid; grid-template-columns: 1fr 1fr auto; gap: 1px; margin-bottom: 1rem; }
 
@@ -202,9 +203,12 @@
   <div class="modal">
     <h2 id="modal-song-title">Editar letra</h2>
     <div>
-      <div class="genius-label">Importar desde Genius</div>
+      <div style="display:flex;gap:1px;margin-bottom:0.5rem">
+        <button class="btn-sm source-tab active" id="tab-genius" onclick="setSource('genius')">Genius</button>
+        <button class="btn-sm source-tab" id="tab-chartlyrics" onclick="setSource('chartlyrics')">ChartLyrics</button>
+      </div>
       <div class="search-wrap">
-        <input type="text" id="modal-genius-search" placeholder="Buscar la cancion en Genius..." autocomplete="off" oninput="onModalGeniusSearch(this.value)">
+        <input type="text" id="modal-genius-search" placeholder="Buscar..." autocomplete="off" oninput="onModalGeniusSearch(this.value)">
         <div class="ac-results" id="ac-modal"></div>
       </div>
     </div>
@@ -358,6 +362,19 @@ function selectForAdd(hit) {
   document.getElementById("ac-add").classList.remove("open");
 }
 
+// SOURCE SWITCHING
+var currentSource = "genius";
+
+function setSource(source) {
+  currentSource = source;
+  document.getElementById("tab-genius").classList.toggle("active", source === "genius");
+  document.getElementById("tab-chartlyrics").classList.toggle("active", source === "chartlyrics");
+  document.getElementById("modal-genius-search").value = "";
+  document.getElementById("ac-modal").classList.remove("open");
+  var placeholder = source === "genius" ? "Buscar en Genius..." : "Buscar en ChartLyrics...";
+  document.getElementById("modal-genius-search").placeholder = placeholder;
+}
+
 // GENIUS AUTOCOMPLETE - modal
 function onModalGeniusSearch(val) {
   clearTimeout(modalSearchTimer);
@@ -365,23 +382,68 @@ function onModalGeniusSearch(val) {
   if (val.length < 2) { box.classList.remove("open"); return; }
   box.innerHTML = '<div class="ac-msg"><span class="spinner"></span>Buscando...</div>';
   box.classList.add("open");
-  modalSearchTimer = setTimeout(function() { fetchSuggestions(val, "ac-modal", selectForModal); }, 450);
+  if (currentSource === "genius") {
+    modalSearchTimer = setTimeout(function() { fetchSuggestions(val, "ac-modal", selectForModal); }, 450);
+  } else {
+    modalSearchTimer = setTimeout(function() { fetchChartLyrics(val, "ac-modal", selectChartLyrics); }, 450);
+  }
 }
 
 async function selectForModal(hit) {
   document.getElementById("modal-genius-search").value = hit.title + " - " + hit.artist;
   document.getElementById("ac-modal").classList.remove("open");
   var ta = document.getElementById("modal-lyrics");
-  ta.value = "";
-  ta.placeholder = "Importando paroles...";
+  ta.value = ""; ta.placeholder = "Importando...";
   try {
     var data = await api("/admin/genius/lyrics?url=" + encodeURIComponent(hit.url));
-    ta.value = data.lyrics;
-    ta.placeholder = "";
-    showToast("Paroles importadas");
+    ta.value = data.lyrics; ta.placeholder = "";
+    showToast("Paroles importadas desde Genius");
   } catch(e) {
-    ta.placeholder = "Error al importar - escribe manualmente";
-    showToast("Error Genius: " + e.message);
+    ta.placeholder = "Error Genius - prueba ChartLyrics";
+    showToast("Error Genius — prueba ChartLyrics");
+  }
+}
+
+async function selectChartLyrics(hit) {
+  document.getElementById("modal-genius-search").value = hit.title + " - " + hit.artist;
+  document.getElementById("ac-modal").classList.remove("open");
+  var ta = document.getElementById("modal-lyrics");
+  ta.value = ""; ta.placeholder = "Importando desde ChartLyrics...";
+  try {
+    var data = await api("/admin/chartlyrics/lyrics?artist=" + encodeURIComponent(hit.artist) + "&title=" + encodeURIComponent(hit.title));
+    ta.value = data.lyrics; ta.placeholder = "";
+    showToast("Paroles importadas desde ChartLyrics");
+  } catch(e) {
+    ta.placeholder = "Error - escribe manualmente";
+    showToast("Error ChartLyrics: " + e.message);
+  }
+}
+
+async function fetchChartLyrics(query, boxId, onSelect) {
+  var box = document.getElementById(boxId);
+  try {
+    var results = await api("/admin/chartlyrics/search?q=" + encodeURIComponent(query));
+    if (!results.length) { box.innerHTML = '<div class="ac-msg">Sin resultados</div>'; return; }
+    box.innerHTML = "";
+    results.forEach(function(hit) {
+      var item = document.createElement("div");
+      item.className = "ac-item";
+      var info = document.createElement("div");
+      info.className = "ac-info";
+      var titleEl = document.createElement("div");
+      titleEl.className = "ac-title";
+      titleEl.textContent = hit.title;
+      var artistEl = document.createElement("div");
+      artistEl.className = "ac-artist";
+      artistEl.textContent = hit.artist;
+      info.appendChild(titleEl);
+      info.appendChild(artistEl);
+      item.appendChild(info);
+      item.addEventListener("mousedown", function(e) { e.preventDefault(); onSelect(hit); });
+      box.appendChild(item);
+    });
+  } catch(e) {
+    box.innerHTML = '<div class="ac-msg">Error de conexion</div>';
   }
 }
 
