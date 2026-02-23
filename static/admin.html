@@ -410,9 +410,23 @@ async function selectChartLyrics(hit) {
   var ta = document.getElementById("modal-lyrics");
   ta.value = ""; ta.placeholder = "Importando desde ChartLyrics...";
   try {
-    var data = await api("/admin/chartlyrics/lyrics?artist=" + encodeURIComponent(hit.artist) + "&title=" + encodeURIComponent(hit.title));
-    ta.value = data.lyrics; ta.placeholder = "";
-    showToast("Paroles importadas desde ChartLyrics");
+    // Call ChartLyrics directly from browser (no server restriction)
+    var url = "https://api.chartlyrics.com/apiv1.asmx/SearchLyricDirect"
+      + "?lyricsartist=" + encodeURIComponent(hit.artist)
+      + "&lyricssong=" + encodeURIComponent(hit.title);
+    var res = await fetch(url);
+    var xml = await res.text();
+    var parser = new DOMParser();
+    var doc = parser.parseFromString(xml, "text/xml");
+    var lyricNode = doc.querySelector("Lyric");
+    var lyrics = lyricNode ? lyricNode.textContent.trim() : "";
+    if (lyrics && lyrics.length > 50) {
+      ta.value = lyrics; ta.placeholder = "";
+      showToast("Paroles importadas desde ChartLyrics");
+    } else {
+      ta.placeholder = "Sin paroles — prueba otro titulo o escribe manualmente";
+      showToast("Sin paroles en ChartLyrics para esta cancion");
+    }
   } catch(e) {
     ta.placeholder = "Error - escribe manualmente";
     showToast("Error ChartLyrics: " + e.message);
@@ -422,28 +436,51 @@ async function selectChartLyrics(hit) {
 async function fetchChartLyrics(query, boxId, onSelect) {
   var box = document.getElementById(boxId);
   try {
-    var results = await api("/admin/chartlyrics/search?q=" + encodeURIComponent(query));
-    if (!results.length) { box.innerHTML = '<div class="ac-msg">Sin resultados</div>'; return; }
+    // Call ChartLyrics directly from browser
+    var url = "https://api.chartlyrics.com/apiv1.asmx/SearchLyric"
+      + "?lyricText=" + encodeURIComponent(query);
+    var res = await fetch(url);
+    var xml = await res.text();
+    var parser = new DOMParser();
+    var doc = parser.parseFromString(xml, "text/xml");
+    var items = doc.querySelectorAll("SearchLyricResult");
+    if (!items.length) {
+      box.innerHTML = '<div class="ac-msg">Sin resultados</div>';
+      return;
+    }
     box.innerHTML = "";
-    results.forEach(function(hit) {
+    var seen = {};
+    var count = 0;
+    items.forEach(function(node) {
+      if (count >= 8) return;
+      var artist = node.querySelector("Artist") ? node.querySelector("Artist").textContent.trim() : "";
+      var song = node.querySelector("Song") ? node.querySelector("Song").textContent.trim() : "";
+      var lid = node.querySelector("LyricId") ? node.querySelector("LyricId").textContent.trim() : "";
+      var key = artist + "|" + song;
+      if (!artist || !song || !lid || seen[key]) return;
+      seen[key] = true;
+      count++;
       var item = document.createElement("div");
       item.className = "ac-item";
       var info = document.createElement("div");
       info.className = "ac-info";
       var titleEl = document.createElement("div");
       titleEl.className = "ac-title";
-      titleEl.textContent = hit.title;
+      titleEl.textContent = song;
       var artistEl = document.createElement("div");
       artistEl.className = "ac-artist";
-      artistEl.textContent = hit.artist;
+      artistEl.textContent = artist;
       info.appendChild(titleEl);
       info.appendChild(artistEl);
       item.appendChild(info);
+      var hit = { title: song, artist: artist, chartlyrics_id: lid };
       item.addEventListener("mousedown", function(e) { e.preventDefault(); onSelect(hit); });
       box.appendChild(item);
     });
+    if (!count) box.innerHTML = '<div class="ac-msg">Sin resultados</div>';
   } catch(e) {
     box.innerHTML = '<div class="ac-msg">Error de conexion</div>';
+    console.error("ChartLyrics error:", e);
   }
 }
 
