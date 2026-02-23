@@ -101,7 +101,7 @@
   .overlay.open { display: flex; }
   .modal { background: #0a0a0a; border: 1px solid #333; padding: 2rem; width: 100%; max-width: 640px; max-height: 90vh; overflow-y: auto; display: flex; flex-direction: column; gap: 1rem; }
   .modal h2 { font-family: "Special Elite", cursive; font-size: 1.2rem; }
-  .genius-label { font-size: 0.55rem; letter-spacing: 0.15em; text-transform: uppercase; color: #555; border: 1px solid #222; padding: 0.15rem 0.4rem; display: inline-block; margin-bottom: 0.5rem; }
+  .source-label { font-size: 0.55rem; letter-spacing: 0.15em; text-transform: uppercase; color: #555; border: 1px solid #222; padding: 0.15rem 0.4rem; display: inline-block; margin-bottom: 0.5rem; }
   .modal-actions { display: flex; gap: 1px; margin-top: 0.5rem; }
 
   /* TOAST */
@@ -186,11 +186,7 @@
 
   <div class="section">
     <div class="section-label">Anadir cancion</div>
-    <div class="search-wrap">
-      <input type="text" id="genius-search" placeholder="Buscar en Genius — titulo o artista..." autocomplete="off" oninput="onGeniusSearch(this.value)">
-      <div class="ac-results" id="ac-add"></div>
-    </div>
-    <div class="form-grid" style="margin-top:1px">
+    <div class="form-grid">
       <input type="text" id="new-title" placeholder="Titulo">
       <input type="text" id="new-artist" placeholder="Artista">
       <button class="btn-primary" id="btn-add-song">Anadir</button>
@@ -204,11 +200,10 @@
     <h2 id="modal-song-title">Editar letra</h2>
     <div>
       <div style="display:flex;gap:1px;margin-bottom:0.5rem">
-        <button class="btn-sm source-tab active" id="tab-genius" onclick="setSource('genius')">Genius</button>
-        <button class="btn-sm source-tab" id="tab-chartlyrics" onclick="setSource('chartlyrics')">lyrics.ovh</button>
+        <button class="btn-sm source-tab active" id="tab-chartlyrics" onclick="setSource('chartlyrics')">lyrics.ovh</button>
       </div>
       <div class="search-wrap">
-        <input type="text" id="modal-genius-search" placeholder="Buscar..." autocomplete="off" oninput="onModalGeniusSearch(this.value)">
+        <input type="text" id="lyrics-search" placeholder="Artista — Titulo..." autocomplete="off" oninput="onLyricsSearch(this.value)">
         <div class="ac-results" id="ac-modal"></div>
       </div>
     </div>
@@ -320,7 +315,6 @@ async function addSong() {
     await api("/admin/songs", "POST", { title: title, artist: artist, position: songs.length });
     document.getElementById("new-title").value = "";
     document.getElementById("new-artist").value = "";
-    document.getElementById("genius-search").value = "";
     document.getElementById("ac-add").classList.remove("open");
     await loadStats();
     showToast("Cancion anadida");
@@ -345,67 +339,31 @@ async function resetVotes() {
   } catch { showToast("Error"); }
 }
 
-// GENIUS AUTOCOMPLETE - section add
-function onGeniusSearch(val) {
-  clearTimeout(searchTimer);
-  var box = document.getElementById("ac-add");
-  if (val.length < 2) { box.classList.remove("open"); return; }
-  box.innerHTML = '<div class="ac-msg"><span class="spinner"></span>Buscando...</div>';
-  box.classList.add("open");
-  searchTimer = setTimeout(function() { fetchSuggestions(val, "ac-add", selectForAdd); }, 450);
-}
 
-function selectForAdd(hit) {
-  document.getElementById("new-title").value = hit.title;
-  document.getElementById("new-artist").value = hit.artist;
-  document.getElementById("genius-search").value = hit.title + " - " + hit.artist;
-  document.getElementById("ac-add").classList.remove("open");
-}
 
 // SOURCE SWITCHING
-var currentSource = "genius";
+var currentSource = "chartlyrics";
 
 function setSource(source) {
   currentSource = source;
-  document.getElementById("tab-genius").classList.toggle("active", source === "genius");
   document.getElementById("tab-chartlyrics").classList.toggle("active", source === "chartlyrics");
-  document.getElementById("modal-genius-search").value = "";
+  document.getElementById("lyrics-search").value = "";
   document.getElementById("ac-modal").classList.remove("open");
-  var placeholder = source === "genius" ? "Buscar en Genius..." : "Buscar en ChartLyrics...";
-  document.getElementById("modal-genius-search").placeholder = placeholder;
+  document.getElementById("lyrics-search").placeholder = placeholder;
 }
 
-// GENIUS AUTOCOMPLETE - modal
-function onModalGeniusSearch(val) {
+function onLyricsSearch(val) {
   clearTimeout(modalSearchTimer);
   var box = document.getElementById("ac-modal");
   if (val.length < 2) { box.classList.remove("open"); return; }
   box.innerHTML = '<div class="ac-msg"><span class="spinner"></span>Buscando...</div>';
   box.classList.add("open");
-  if (currentSource === "genius") {
-    modalSearchTimer = setTimeout(function() { fetchSuggestions(val, "ac-modal", selectForModal); }, 450);
-  } else {
-    modalSearchTimer = setTimeout(function() { fetchChartLyrics(val, "ac-modal", selectChartLyrics); }, 450);
-  }
+  modalSearchTimer = setTimeout(function() { fetchChartLyrics(val, "ac-modal", selectChartLyrics); }, 450);
 }
 
-async function selectForModal(hit) {
-  document.getElementById("modal-genius-search").value = hit.title + " - " + hit.artist;
-  document.getElementById("ac-modal").classList.remove("open");
-  var ta = document.getElementById("modal-lyrics");
-  ta.value = ""; ta.placeholder = "Importando...";
-  try {
-    var data = await api("/admin/genius/lyrics?url=" + encodeURIComponent(hit.url));
-    ta.value = data.lyrics; ta.placeholder = "";
-    showToast("Paroles importadas desde Genius");
-  } catch(e) {
-    ta.placeholder = "Error Genius - prueba ChartLyrics";
-    showToast("Error Genius — prueba ChartLyrics");
-  }
-}
 
 async function selectChartLyrics(hit) {
-  document.getElementById("modal-genius-search").value = hit.title + " - " + hit.artist;
+  document.getElementById("lyrics-search").value = hit.title + " - " + hit.artist;
   document.getElementById("ac-modal").classList.remove("open");
   var ta = document.getElementById("modal-lyrics");
   ta.value = ""; ta.placeholder = "Importando desde lyrics.ovh...";
@@ -446,7 +404,7 @@ async function fetchChartLyrics(query, boxId, onSelect) {
   hint.style.padding = "0.8rem 1rem";
 
   hint.innerHTML =
-    "<div style=\"margin-bottom:0.5rem;font-size:0.6rem;letter-spacing:0.15em\">LYRICS.OVH — escribe artista y titulo:</div>" +
+    "<div style=\"margin-bottom:0.5rem;font-size:0.6rem;letter-spacing:0.15em\">lyrics.ovh — artista y titulo:</div>" +
     "<div style=\"display:flex;gap:1px;margin-bottom:0.5rem\">" +
       "<input id=\"ovh-artist\" type=\"text\" style=\"flex:1;background:#0a0a0a;border:1px solid #333;color:#f0ece4;font-family:monospace;font-size:0.7rem;padding:0.4rem 0.6rem\" placeholder=\"Artista\" value=\"" + guessArtist + "\">" +
       "<input id=\"ovh-title\" type=\"text\" style=\"flex:1;background:#0a0a0a;border:1px solid #333;color:#f0ece4;font-family:monospace;font-size:0.7rem;padding:0.4rem 0.6rem\" placeholder=\"Titulo\"  value=\"" + guessTitle + "\">" +
@@ -469,54 +427,13 @@ async function fetchChartLyrics(query, boxId, onSelect) {
   }, 50);
 }
 
-// SHARED FETCH
-async function fetchSuggestions(query, boxId, onSelect) {
-  var box = document.getElementById(boxId);
-  try {
-    var results = await api("/admin/genius/search?q=" + encodeURIComponent(query));
-    if (!results.length) { box.innerHTML = '<div class="ac-msg">Sin resultados</div>'; return; }
-    box.innerHTML = "";
-        results.forEach(function(hit) {
-      var item = document.createElement("div");
-      item.className = "ac-item";
-
-      var img = document.createElement("img");
-      img.className = "ac-thumb";
-      img.src = hit.thumbnail || "";
-      img.alt = "";
-      img.addEventListener("error", function() { this.style.display = "none"; });
-
-      var info = document.createElement("div");
-      info.className = "ac-info";
-
-      var titleEl = document.createElement("div");
-      titleEl.className = "ac-title";
-      titleEl.textContent = hit.title;
-
-      var artistEl = document.createElement("div");
-      artistEl.className = "ac-artist";
-      artistEl.textContent = hit.artist;
-
-      info.appendChild(titleEl);
-      info.appendChild(artistEl);
-      item.appendChild(img);
-      item.appendChild(info);
-
-      item.addEventListener("mousedown", function(e) { e.preventDefault(); onSelect(hit); });
-      box.appendChild(item);
-    });
-  } catch(e) {
-    box.innerHTML = '<div class="ac-msg">Error de conexion</div>';
-    console.error(e);
-  }
-}
 
 // LYRICS MODAL
 function openLyricsModal(id) {
   editingSongId = id;
   var song = songs.find(function(s) { return s.id === id; });
   document.getElementById("modal-song-title").textContent = song ? song.title : "Editar letra";
-  document.getElementById("modal-genius-search").value = "";
+  document.getElementById("lyrics-search").value = "";
   document.getElementById("ac-modal").classList.remove("open");
   document.getElementById("modal-lyrics").value = song && song.lyrics ? song.lyrics : "";
   document.getElementById("lyrics-overlay").classList.add("open");

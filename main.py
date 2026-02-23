@@ -21,7 +21,6 @@ from schemas import SongCreate, SongUpdate, LyricsUpdate, SongOut
 load_dotenv()
 
 ADMIN_TOKEN  = os.getenv("ADMIN_TOKEN", "rockNroll2024")
-GENIUS_TOKEN = os.getenv("GENIUS_TOKEN", "")
 
 # ── Bootstrap DB ─────────────────────────────────────────────────────────────
 
@@ -217,102 +216,7 @@ def admin_stats(db: Session = Depends(get_db), _=Depends(check_admin)):
     }
 
 
-# ── Genius API ────────────────────────────────────────────────────────────────
 
-def genius_request(path: str) -> dict:
-    """Call Genius API via allorigins proxy to bypass outbound network restrictions."""
-    target = f"https://api.genius.com{path}"
-    # Encode auth header in the URL params so allorigins can forward it
-    # Instead, call Genius directly first, fall back to proxy
-    headers = {
-        "Authorization": f"Bearer {GENIUS_TOKEN}",
-        "User-Agent": "Mozilla/5.0"
-    }
-    # Try direct first
-    try:
-        req = urllib.request.Request(target, headers=headers)
-        with urllib.request.urlopen(req, timeout=6) as r:
-            return json.loads(r.read().decode())
-    except Exception:
-        pass
-
-    # Fallback: proxy via allorigins (GET only, no custom headers)
-    # We use the Genius public search endpoint which accepts token in URL
-    target_with_token = target + ("&" if "?" in target else "?") + f"access_token={GENIUS_TOKEN}"
-    proxy_url = "https://api.allorigins.win/raw?url=" + urllib.parse.quote(target_with_token, safe="")
-    req2 = urllib.request.Request(proxy_url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req2, timeout=12) as r:
-        return json.loads(r.read().decode())
-
-
-def scrape_lyrics(song_url: str) -> str:
-    """Scrape lyrics from Genius page via proxy if needed."""
-    import gzip
-
-    def fetch_html(url):
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
-        }
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=15) as r:
-            raw = r.read()
-            if r.headers.get("Content-Encoding") == "gzip":
-                raw = gzip.decompress(raw)
-            return raw.decode("utf-8", errors="ignore")
-
-    # Try direct first
-    try:
-        html = fetch_html(song_url)
-    except Exception:
-        # Fallback via allorigins proxy
-        proxy_url = "https://api.allorigins.win/raw?url=" + urllib.parse.quote(song_url, safe="")
-        html = fetch_html(proxy_url)
-
-    # Méthode 1 : data-lyrics-container
-    containers = re.findall(
-        r'data-lyrics-container="true"[^>]*>([\s\S]*?)</div>',
-        html
-    )
-    if containers:
-        text = "\n".join(containers)
-        text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
-        text = re.sub(r"<[^>]+>", "", text)
-        text = re.sub(r"&amp;", "&", text)
-        text = re.sub(r"&lt;", "<", text)
-        text = re.sub(r"&gt;", ">", text)
-        text = re.sub(r"&#x27;", "'", text)
-        text = re.sub(r"&quot;", '"', text)
-        text = re.sub(r"\n{3,}", "\n\n", text).strip()
-        if len(text) > 100:
-            return text
-
-    # Méthode 2 : JSON embarqué dans la page
-    json_match = re.search(r'"lyrics":\{"dom":\{"tag":"root","children":([\s\S]+?)\},"tracking_data"', html)
-    if json_match:
-        try:
-            children = json.loads(json_match.group(1))
-            def extract(node):
-                if isinstance(node, str):
-                    return node
-                if isinstance(node, dict):
-                    tag = node.get("tag", "")
-                    children = node.get("children", [])
-                    parts = [extract(c) for c in children]
-                    if tag == "br":
-                        return "\n"
-                    return "".join(parts)
-                if isinstance(node, list):
-                    return "".join(extract(c) for c in node)
-                return ""
-            text = extract(children).strip()
-            if len(text) > 100:
-                return text
-        except Exception:
-            pass
-
-    return ""
 
 
 def search_chartlyrics(artist: str, title: str) -> str:
@@ -358,40 +262,6 @@ def search_chartlyrics_list(query: str) -> list:
         return []
 
 
-@app.get("/admin/genius/search")
-def genius_search(q: str, _=Depends(check_admin)):
-    if not GENIUS_TOKEN:
-        raise HTTPException(status_code=503, detail="GENIUS_TOKEN non configuré")
-    if not q or len(q) < 2:
-        return []
-    try:
-        params = urllib.parse.urlencode({"q": q, "per_page": 8})
-        data = genius_request(f"/search?{params}")
-        hits = data.get("response", {}).get("hits", [])
-        return [{
-            "genius_id": h["result"].get("id"),
-            "title":     h["result"].get("title", ""),
-            "artist":    h["result"].get("primary_artist", {}).get("name", ""),
-            "url":       h["result"].get("url", ""),
-            "thumbnail": h["result"].get("song_art_image_thumbnail_url", ""),
-        } for h in hits]
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Erreur Genius search : {e}")
-
-
-@app.get("/admin/genius/lyrics")
-def genius_lyrics(url: str, _=Depends(check_admin)):
-    if not GENIUS_TOKEN:
-        raise HTTPException(status_code=503, detail="GENIUS_TOKEN non configuré")
-    try:
-        lyrics = scrape_lyrics(url)
-        if not lyrics:
-            raise HTTPException(status_code=404, detail="Paroles introuvables — essaie une autre version de la chanson")
-        return {"lyrics": lyrics}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Erreur scraping : {e}")
 
 
 # ── ChartLyrics API (free fallback) ──────────────────────────────────────────
