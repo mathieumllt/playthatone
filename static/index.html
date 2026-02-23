@@ -13,11 +13,27 @@
     --black: #0a0a0a;
     --white: #f0ece4;
     --mid: #888;
+    --bg: #0a0a0a;
+    --fg: #f0ece4;
+    --border: #222;
+    --card: #0d0d0d;
+    --card-hover: #1a1a1a;
+  }
+
+  :root.light {
+    --bg: #f0ece4;
+    --fg: #0a0a0a;
+    --border: #ccc;
+    --card: #e8e4dc;
+    --card-hover: #ddd8d0;
+    --mid: #666;
+    --white: #0a0a0a;
+    --black: #f0ece4;
   }
 
   body {
-    background: var(--black);
-    color: var(--white);
+    background: var(--bg);
+    color: var(--fg);
     font-family: 'Share Tech Mono', monospace;
     min-height: 100vh;
     overflow-x: hidden;
@@ -32,9 +48,9 @@
   }
 
   header {
-    border-bottom: 1px solid #222;
+    border-bottom: 1px solid var(--border);
     padding: 2rem;
-    display: flex; align-items: baseline; gap: 1.5rem;
+    display: flex; align-items: center; justify-content: space-between; gap: 1.5rem;
   }
 
   .logo {
@@ -74,7 +90,7 @@
   #vote-section { margin-bottom: 4rem; }
 
   .song-card {
-    border: 1px solid #222; padding: 1.5rem; margin-bottom: 1px;
+    border: 1px solid var(--border); padding: 1.5rem; margin-bottom: 1px;
     display: grid; grid-template-columns: 1fr auto auto;
     align-items: center; gap: 1.5rem;
     position: relative; overflow: hidden;
@@ -82,12 +98,12 @@
   }
   .song-card::before {
     content: ''; position: absolute; left: 0; top: 0; bottom: 0;
-    width: 0; background: #1a1a1a; transition: width 0.4s ease; z-index: 0;
+    width: 0; background: var(--card-hover); transition: width 0.4s ease; z-index: 0;
   }
-  .song-card:hover { border-color: #444; }
+  .song-card:hover { border-color: var(--mid); }
   .song-card:hover::before { width: 100%; }
   .song-card > * { position: relative; z-index: 1; }
-  .song-card.leading { border-color: #444; }
+  .song-card.leading { border-color: var(--mid); }
 
   .song-number { font-size: 0.6rem; color: var(--mid); letter-spacing: 0.1em; }
   .song-title { font-family: 'Special Elite', cursive; font-size: 1.3rem; letter-spacing: 0.02em; }
@@ -134,8 +150,8 @@
   }
 
   .lyrics-display {
-    border: 1px solid #1a1a1a; padding: 2rem;
-    min-height: 200px; background: #0d0d0d;
+    border: 1px solid var(--border); padding: 2rem;
+    min-height: 200px; background: var(--card);
   }
 
   .lyrics-placeholder {
@@ -145,7 +161,7 @@
 
   .lyrics-song-title {
     font-family: 'Special Elite', cursive; font-size: 1.5rem;
-    margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #222;
+    margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border);
   }
 
   .lyrics-text {
@@ -167,7 +183,7 @@
   }
 
   footer {
-    border-top: 1px solid #1a1a1a; padding: 1.5rem 2rem;
+    border-top: 1px solid var(--border); padding: 1.5rem 2rem;
     display: flex; justify-content: space-between; align-items: center;
     font-size: 0.6rem; color: #333; letter-spacing: 0.1em; text-transform: uppercase;
   }
@@ -191,13 +207,14 @@
 <body>
 
 <header>
-  <div>
-    <div class="logo"><span>__</span>PlayThatOne<span>__</span></div>
+  <div style="flex:1">
+    <div class="logo">PlayThatOne</div>
     <div class="tagline" style="margin-top:0.5rem">
       <span class="live-dot" id="live-dot"></span>
       <span id="live-label">Conectando...</span>
     </div>
   </div>
+  <button class="btn-theme" id="btn-theme" title="Cambiar tema">◐</button>
 </header>
 
 <main>
@@ -217,7 +234,12 @@
 
 <footer>
   <span>__PlayThatOne__ — La calle como escenario</span>
-  <span>Cantar juntos sana</span>
+  <div class="footer-actions">
+    <span style="opacity:0.5">Cantar juntos sana</span>
+    <button class="btn-bizum" id="btn-bizum" title="Copiar numero Bizum">
+      ♪ Bizum
+    </button>
+  </div>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -379,6 +401,33 @@
   }
 
   // ── Init ───────────────────────────────────────────────────────────────────
+
+  // Theme toggle
+  var savedTheme = localStorage.getItem("pto-theme") || "dark";
+  if (savedTheme === "light") document.documentElement.classList.add("light");
+
+  document.getElementById("btn-theme").addEventListener("click", function() {
+    var isLight = document.documentElement.classList.toggle("light");
+    localStorage.setItem("pto-theme", isLight ? "light" : "dark");
+  });
+
+  // Bizum copy
+  document.getElementById("btn-bizum").addEventListener("click", function() {
+    var numero = "+34658327204";
+    var btn = this;
+    navigator.clipboard.writeText(numero).then(function() {
+      btn.textContent = "✓ " + numero;
+      btn.classList.add("copied");
+      setTimeout(function() {
+        btn.textContent = "♪ Bizum";
+        btn.classList.remove("copied");
+      }, 2500);
+    }).catch(function() {
+      // fallback si clipboard pas dispo
+      showToast("Bizum: +34658327204");
+    });
+  });
+
   connectWS();
 </script>
 </body>
