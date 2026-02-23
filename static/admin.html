@@ -205,7 +205,7 @@
     <div>
       <div style="display:flex;gap:1px;margin-bottom:0.5rem">
         <button class="btn-sm source-tab active" id="tab-genius" onclick="setSource('genius')">Genius</button>
-        <button class="btn-sm source-tab" id="tab-chartlyrics" onclick="setSource('chartlyrics')">ChartLyrics</button>
+        <button class="btn-sm source-tab" id="tab-chartlyrics" onclick="setSource('chartlyrics')">lyrics.ovh</button>
       </div>
       <div class="search-wrap">
         <input type="text" id="modal-genius-search" placeholder="Buscar..." autocomplete="off" oninput="onModalGeniusSearch(this.value)">
@@ -408,80 +408,65 @@ async function selectChartLyrics(hit) {
   document.getElementById("modal-genius-search").value = hit.title + " - " + hit.artist;
   document.getElementById("ac-modal").classList.remove("open");
   var ta = document.getElementById("modal-lyrics");
-  ta.value = ""; ta.placeholder = "Importando desde ChartLyrics...";
+  ta.value = ""; ta.placeholder = "Importando desde lyrics.ovh...";
   try {
-    // Call ChartLyrics directly from browser (no server restriction)
-    var url = "https://api.chartlyrics.com/apiv1.asmx/SearchLyricDirect"
-      + "?lyricsartist=" + encodeURIComponent(hit.artist)
-      + "&lyricssong=" + encodeURIComponent(hit.title);
+    var url = "https://api.lyrics.ovh/v1/"
+      + encodeURIComponent(hit.artist) + "/"
+      + encodeURIComponent(hit.title);
     var res = await fetch(url);
-    var xml = await res.text();
-    var parser = new DOMParser();
-    var doc = parser.parseFromString(xml, "text/xml");
-    var lyricNode = doc.querySelector("Lyric");
-    var lyrics = lyricNode ? lyricNode.textContent.trim() : "";
-    if (lyrics && lyrics.length > 50) {
-      ta.value = lyrics; ta.placeholder = "";
-      showToast("Paroles importadas desde ChartLyrics");
+    if (!res.ok) throw new Error("No encontrado");
+    var data = await res.json();
+    if (data.lyrics && data.lyrics.length > 20) {
+      ta.value = data.lyrics.trim();
+      ta.placeholder = "";
+      showToast("Paroles importadas desde lyrics.ovh");
     } else {
-      ta.placeholder = "Sin paroles — prueba otro titulo o escribe manualmente";
-      showToast("Sin paroles en ChartLyrics para esta cancion");
+      ta.placeholder = "Sin paroles — escribe manualmente";
+      showToast("Sin paroles para esta cancion");
     }
   } catch(e) {
-    ta.placeholder = "Error - escribe manualmente";
-    showToast("Error ChartLyrics: " + e.message);
+    ta.placeholder = "No encontrado — escribe manualmente";
+    showToast("No encontrado en lyrics.ovh");
   }
 }
 
 async function fetchChartLyrics(query, boxId, onSelect) {
+  // lyrics.ovh ne supporte pas la recherche par texte libre
+  // On affiche directement un champ artiste/titre pour appel direct
   var box = document.getElementById(boxId);
-  try {
-    // Call ChartLyrics directly from browser
-    var url = "https://api.chartlyrics.com/apiv1.asmx/SearchLyric"
-      + "?lyricText=" + encodeURIComponent(query);
-    var res = await fetch(url);
-    var xml = await res.text();
-    var parser = new DOMParser();
-    var doc = parser.parseFromString(xml, "text/xml");
-    var items = doc.querySelectorAll("SearchLyricResult");
-    if (!items.length) {
-      box.innerHTML = '<div class="ac-msg">Sin resultados</div>';
-      return;
-    }
-    box.innerHTML = "";
-    var seen = {};
-    var count = 0;
-    items.forEach(function(node) {
-      if (count >= 8) return;
-      var artist = node.querySelector("Artist") ? node.querySelector("Artist").textContent.trim() : "";
-      var song = node.querySelector("Song") ? node.querySelector("Song").textContent.trim() : "";
-      var lid = node.querySelector("LyricId") ? node.querySelector("LyricId").textContent.trim() : "";
-      var key = artist + "|" + song;
-      if (!artist || !song || !lid || seen[key]) return;
-      seen[key] = true;
-      count++;
-      var item = document.createElement("div");
-      item.className = "ac-item";
-      var info = document.createElement("div");
-      info.className = "ac-info";
-      var titleEl = document.createElement("div");
-      titleEl.className = "ac-title";
-      titleEl.textContent = song;
-      var artistEl = document.createElement("div");
-      artistEl.className = "ac-artist";
-      artistEl.textContent = artist;
-      info.appendChild(titleEl);
-      info.appendChild(artistEl);
-      item.appendChild(info);
-      var hit = { title: song, artist: artist, chartlyrics_id: lid };
-      item.addEventListener("mousedown", function(e) { e.preventDefault(); onSelect(hit); });
-      box.appendChild(item);
+  box.innerHTML = "";
+
+  var words = query.trim().split(/\s+/);
+  var guessArtist = words.slice(0, Math.ceil(words.length / 2)).join(" ");
+  var guessTitle = words.slice(Math.ceil(words.length / 2)).join(" ");
+
+  var hint = document.createElement("div");
+  hint.className = "ac-msg";
+  hint.style.textAlign = "left";
+  hint.style.padding = "0.8rem 1rem";
+
+  hint.innerHTML =
+    "<div style=\"margin-bottom:0.5rem;font-size:0.6rem;letter-spacing:0.15em\">LYRICS.OVH — escribe artista y titulo:</div>" +
+    "<div style=\"display:flex;gap:1px;margin-bottom:0.5rem\">" +
+      "<input id=\"ovh-artist\" type=\"text\" style=\"flex:1;background:#0a0a0a;border:1px solid #333;color:#f0ece4;font-family:monospace;font-size:0.7rem;padding:0.4rem 0.6rem\" placeholder=\"Artista\" value=\"" + guessArtist + "\">" +
+      "<input id=\"ovh-title\" type=\"text\" style=\"flex:1;background:#0a0a0a;border:1px solid #333;color:#f0ece4;font-family:monospace;font-size:0.7rem;padding:0.4rem 0.6rem\" placeholder=\"Titulo\"  value=\"" + guessTitle + "\">" +
+    "</div>" +
+    "<button id=\"ovh-btn\" style=\"background:#f0ece4;color:#0a0a0a;border:none;font-family:monospace;font-size:0.65rem;letter-spacing:0.15em;text-transform:uppercase;padding:0.4rem 1rem;cursor:pointer;width:100%\">Buscar paroles</button>";
+
+  box.appendChild(hint);
+
+  setTimeout(function() {
+    var btn = document.getElementById("ovh-btn");
+    if (btn) btn.addEventListener("mousedown", function(e) {
+      e.preventDefault();
+      var artist = document.getElementById("ovh-artist").value.trim();
+      var title = document.getElementById("ovh-title").value.trim();
+      if (artist && title) {
+        box.classList.remove("open");
+        onSelect({ artist: artist, title: title });
+      }
     });
-    if (!count) box.innerHTML = '<div class="ac-msg">Sin resultados</div>';
-  } catch(e) {
-    box.innerHTML = '<div class="ac-msg">Error de conexion</div>';
-    console.error("ChartLyrics error:", e);
-  }
+  }, 50);
 }
 
 // SHARED FETCH
