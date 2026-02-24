@@ -318,9 +318,9 @@ async function addSong() {
     document.getElementById("new-title").value = "";
     document.getElementById("new-artist").value = "";
     document.getElementById("ac-add").classList.remove("open");
-    await loadStats();
     showToast("Cancion anadida");
-  } catch { showToast("Error al anadir"); }
+    await loadStats();
+  } catch(err) { console.error("addSong error:", err); showToast("Error al anadir"); }
 }
 
 async function deleteSong(id, title) {
