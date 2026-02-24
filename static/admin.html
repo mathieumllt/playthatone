@@ -319,7 +319,7 @@ async function addSong() {
     console.log("POST result:", result);
     document.getElementById("new-title").value = "";
     document.getElementById("new-artist").value = "";
-    document.getElementById("ac-add").classList.remove("open");
+    var acAdd = document.getElementById("ac-add"); if (acAdd) acAdd.classList.remove("open");
     showToast("Cancion anadida");
     await loadStats();
   } catch(err) { console.error("addSong error:", err); showToast("Error al anadir"); }
