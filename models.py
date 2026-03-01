@@ -9,6 +9,7 @@ class Song(Base):
     title      = Column(String(200), nullable=False)
     artist     = Column(String(200), nullable=False)
     lyrics     = Column(Text, nullable=True)
+    chords     = Column(Text, nullable=True)
     position   = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

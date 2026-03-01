@@ -14,9 +14,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from dotenv import load_dotenv
 
+from sqlalchemy import inspect as sa_inspect, text
 from database import engine, get_db, Base
 from models import Song, Vote
-from schemas import SongCreate, SongUpdate, LyricsUpdate, SongOut
+from schemas import SongCreate, SongUpdate, LyricsUpdate, ChordsUpdate, SongOut
 
 load_dotenv()
 
@@ -24,9 +25,18 @@ ADMIN_TOKEN  = os.getenv("ADMIN_TOKEN", "rockNroll2024")
 
 # ── Bootstrap DB ─────────────────────────────────────────────────────────────
 
+def _migrate_db():
+    """Ajoute les colonnes manquantes sans toucher aux données existantes."""
+    existing = [c["name"] for c in sa_inspect(engine).get_columns("songs")]
+    with engine.connect() as conn:
+        if "chords" not in existing:
+            conn.execute(text("ALTER TABLE songs ADD COLUMN chords TEXT"))
+            conn.commit()
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    _migrate_db()
     db = next(get_db())
     if db.query(Song).count() == 0:
         seed = [
@@ -83,6 +93,7 @@ def songs_with_votes(db: Session) -> List[dict]:
             "title": s.title,
             "artist": s.artist,
             "lyrics": s.lyrics,
+            "chords": s.chords,
             "position": s.position,
             "votes": count,
         })
@@ -180,6 +191,17 @@ async def admin_delete_song(song_id: int, db: Session = Depends(get_db), _=Depen
     await manager.broadcast({"event": "votes_update", "songs": songs_with_votes(db)})
 
 
+@app.post("/admin/songs/{song_id}/chords")
+async def admin_update_chords(song_id: int, body: ChordsUpdate, db: Session = Depends(get_db), _=Depends(check_admin)):
+    song = db.query(Song).filter(Song.id == song_id).first()
+    if not song:
+        raise HTTPException(status_code=404, detail="Canción no encontrada")
+    song.chords = body.chords
+    db.commit()
+    await manager.broadcast({"event": "votes_update", "songs": songs_with_votes(db)})
+    return {"ok": True}
+
+
 @app.post("/admin/songs/{song_id}/lyrics")
 async def admin_update_lyrics(song_id: int, body: LyricsUpdate, db: Session = Depends(get_db), _=Depends(check_admin)):
     song = db.query(Song).filter(Song.id == song_id).first()
@@ -262,6 +284,84 @@ def search_chartlyrics_list(query: str) -> list:
         return []
 
 
+
+
+# ── Ultimate Guitar (chords) ─────────────────────────────────────────────────
+
+UG_HEADERS = {
+    "User-Agent": "UGT_ANDROID/5.10.12 (10)",
+    "Accept": "application/json",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
+def ug_search(artist: str, title: str) -> list:
+    """Recherche les chord tabs sur Ultimate Guitar."""
+    try:
+        query = urllib.parse.quote(f"{artist} {title}")
+        url = (
+            f"https://api.ultimate-guitar.com/api/v1/tab/search"
+            f"?q={query}&type[]=Chords&page=1&official[]=0"
+        )
+        req = urllib.request.Request(url, headers=UG_HEADERS)
+        with urllib.request.urlopen(req, timeout=10) as r:
+            data = json.loads(r.read().decode("utf-8"))
+        tabs = data.get("tabs", [])
+        results = []
+        for t in tabs[:8]:
+            if t.get("type") == "Chords":
+                results.append({
+                    "id": t.get("id"),
+                    "song_name": t.get("song_name", ""),
+                    "artist_name": t.get("artist_name", ""),
+                    "rating": t.get("rating", 0),
+                    "votes": t.get("votes", 0),
+                    "tonality": t.get("tonality_name", ""),
+                    "difficulty": t.get("difficulty", ""),
+                })
+        return results
+    except Exception:
+        return []
+
+
+def ug_fetch_tab(tab_id: int) -> str:
+    """Récupère le contenu d'un tab UG et nettoie le format propriétaire."""
+    try:
+        url = f"https://api.ultimate-guitar.com/api/v1/tab/info?id={tab_id}"
+        req = urllib.request.Request(url, headers=UG_HEADERS)
+        with urllib.request.urlopen(req, timeout=10) as r:
+            data = json.loads(r.read().decode("utf-8"))
+        content = (
+            data.get("tab_view", {})
+                .get("wiki_tab", {})
+                .get("content", "")
+        )
+        if not content:
+            return ""
+        # Nettoyer le format UG : [ch]Am[/ch] → Am, [tab]...[/tab] → ...
+        content = re.sub(r"\[ch\](.*?)\[/ch\]", r"\1", content)
+        content = re.sub(r"\[tab\]|\[/tab\]", "", content)
+        content = re.sub(r"\[/?[a-z]+\]", "", content)  # autres balises éventuelles
+        return content.strip()
+    except Exception:
+        return ""
+
+
+@app.get("/admin/chords/search")
+def chords_search(artist: str, title: str, _=Depends(check_admin)):
+    if not artist or not title:
+        raise HTTPException(status_code=400, detail="artist et title requis")
+    results = ug_search(artist, title)
+    if not results:
+        raise HTTPException(status_code=404, detail="Aucun résultat sur Ultimate Guitar")
+    return results
+
+
+@app.get("/admin/chords/fetch")
+def chords_fetch(tab_id: int, _=Depends(check_admin)):
+    content = ug_fetch_tab(tab_id)
+    if not content:
+        raise HTTPException(status_code=404, detail="Contenu introuvable")
+    return {"chords": content}
 
 
 # ── ChartLyrics API (free fallback) ──────────────────────────────────────────
