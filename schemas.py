@@ -17,11 +17,15 @@ class SongUpdate(BaseModel):
 class LyricsUpdate(BaseModel):
     lyrics: str
 
+class ChordsUpdate(BaseModel):
+    chords: str
+
 class SongOut(BaseModel):
     id: int
     title: str
     artist: str
     lyrics: Optional[str] = None
+    chords: Optional[str] = None
     position: int
     votes: int = 0
 
