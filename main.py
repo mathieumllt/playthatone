@@ -1,9 +1,12 @@
 import os
 import json
+import logging
 import re
 import uuid
 import urllib.request
 import urllib.parse
+
+logger = logging.getLogger(__name__)
 from contextlib import asynccontextmanager
 from typing import List
 
@@ -310,10 +313,17 @@ def ug_search(artist: str, title: str) -> list:
     req = urllib.request.Request(url, headers=UG_HEADERS)
     try:
         with urllib.request.urlopen(req, timeout=10) as r:
-            data = json.loads(r.read().decode("utf-8"))
+            raw = r.read().decode("utf-8")
+            data = json.loads(raw)
     except Exception as exc:
+        logger.error("UG API error for '%s %s': %s", artist, title, exc)
         raise RuntimeError(f"UG API injoignable : {exc}") from exc
     tabs = data.get("tabs", [])
+    logger.info(
+        "UG search '%s %s' → %d tabs, types: %s",
+        artist, title, len(tabs),
+        list({t.get("type") for t in tabs})
+    )
     results = []
     for t in tabs[:8]:
         if t.get("type") == "Chords":
@@ -326,6 +336,7 @@ def ug_search(artist: str, title: str) -> list:
                 "tonality": t.get("tonality_name", ""),
                 "difficulty": t.get("difficulty", ""),
             })
+    logger.info("UG search '%s %s' → %d chords results", artist, title, len(results))
     return results
 
 
