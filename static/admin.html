@@ -659,7 +659,14 @@ async function autoSearchChords() {
       { headers: { "Authorization": "Bearer " + token } }
     );
 
-    if (!res.ok) throw new Error("Aucun résultat");
+    if (!res.ok) {
+      var errData = {};
+      try { errData = await res.json(); } catch(_) {}
+      if (res.status === 502) {
+        throw new Error("UG_DOWN:" + (errData.detail || "API Ultimate Guitar inaccessible depuis le serveur"));
+      }
+      throw new Error("Aucun résultat");
+    }
     var results = await res.json();
 
     var container = document.getElementById("chords-results");
@@ -699,7 +706,11 @@ async function autoSearchChords() {
     });
 
   } catch(e) {
-    showToast("Aucun résultat sur Ultimate Guitar");
+    if (e.message && e.message.startsWith("UG_DOWN:")) {
+      showToast("Ultimate Guitar inaccessible depuis le serveur — entrée manuelle");
+    } else {
+      showToast("Aucun résultat sur Ultimate Guitar");
+    }
     document.getElementById("chords-manual-entry").style.display = "block";
   } finally {
     document.getElementById("chords-spinner").style.display = "none";
