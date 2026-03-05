@@ -295,32 +295,38 @@ UG_HEADERS = {
 }
 
 def ug_search(artist: str, title: str) -> list:
-    """Recherche les chord tabs sur Ultimate Guitar."""
+    """Recherche les chord tabs sur Ultimate Guitar.
+
+    Returns:
+        list: résultats trouvés.
+    Raises:
+        RuntimeError: si l'API UG est injoignable ou renvoie une erreur.
+    """
+    query = urllib.parse.quote(f"{artist} {title}")
+    url = (
+        f"https://api.ultimate-guitar.com/api/v1/tab/search"
+        f"?q={query}&type[]=Chords&page=1&official[]=0"
+    )
+    req = urllib.request.Request(url, headers=UG_HEADERS)
     try:
-        query = urllib.parse.quote(f"{artist} {title}")
-        url = (
-            f"https://api.ultimate-guitar.com/api/v1/tab/search"
-            f"?q={query}&type[]=Chords&page=1&official[]=0"
-        )
-        req = urllib.request.Request(url, headers=UG_HEADERS)
         with urllib.request.urlopen(req, timeout=10) as r:
             data = json.loads(r.read().decode("utf-8"))
-        tabs = data.get("tabs", [])
-        results = []
-        for t in tabs[:8]:
-            if t.get("type") == "Chords":
-                results.append({
-                    "id": t.get("id"),
-                    "song_name": t.get("song_name", ""),
-                    "artist_name": t.get("artist_name", ""),
-                    "rating": t.get("rating", 0),
-                    "votes": t.get("votes", 0),
-                    "tonality": t.get("tonality_name", ""),
-                    "difficulty": t.get("difficulty", ""),
-                })
-        return results
-    except Exception:
-        return []
+    except Exception as exc:
+        raise RuntimeError(f"UG API injoignable : {exc}") from exc
+    tabs = data.get("tabs", [])
+    results = []
+    for t in tabs[:8]:
+        if t.get("type") == "Chords":
+            results.append({
+                "id": t.get("id"),
+                "song_name": t.get("song_name", ""),
+                "artist_name": t.get("artist_name", ""),
+                "rating": t.get("rating", 0),
+                "votes": t.get("votes", 0),
+                "tonality": t.get("tonality_name", ""),
+                "difficulty": t.get("difficulty", ""),
+            })
+    return results
 
 
 def ug_fetch_tab(tab_id: int) -> str:
@@ -350,7 +356,10 @@ def ug_fetch_tab(tab_id: int) -> str:
 def chords_search(artist: str, title: str, _=Depends(check_admin)):
     if not artist or not title:
         raise HTTPException(status_code=400, detail="artist et title requis")
-    results = ug_search(artist, title)
+    try:
+        results = ug_search(artist, title)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
     if not results:
         raise HTTPException(status_code=404, detail="Aucun résultat sur Ultimate Guitar")
     return results
