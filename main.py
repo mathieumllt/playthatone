@@ -1,16 +1,20 @@
+import asyncio
 import os
 import json
 import logging
 import re
+import time
+import unicodedata
 import uuid
 import urllib.request
 import urllib.parse
 
 logger = logging.getLogger(__name__)
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from typing import List
 
-from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect, Header, Request, Response, Cookie
+from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect, Header, Request, Response, Cookie, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.orm import Session
@@ -18,23 +22,39 @@ from sqlalchemy import func
 from dotenv import load_dotenv
 
 from sqlalchemy import inspect as sa_inspect, text
-from database import engine, get_db, Base
-from models import Song, Vote
-from schemas import SongCreate, SongUpdate, LyricsUpdate, ChordsUpdate, SongOut
+from database import engine, get_db, Base, SessionLocal
+import enrich
+from enrich import UG_TAB_URL, ug_search, ug_fetch_tab
+from models import Song, Vote, Proposal
+from schemas import SongCreate, SongUpdate, LyricsUpdate, ChordsUpdate, SongOut, ProposalCreate
 
 load_dotenv()
 
 ADMIN_TOKEN  = os.getenv("ADMIN_TOKEN", "rockNroll2024")
+# Votes each audience member can have on songs not yet played (a vote comes back
+# when its song is played)
+VOTES_PER_SESSION = int(os.getenv("VOTES_PER_SESSION", "3"))
+# DISABLE_AUTH=1: admin routes are open (local dev only)
+AUTH_DISABLED = os.getenv("DISABLE_AUTH") == "1"
+if AUTH_DISABLED:
+    logger.warning("DISABLE_AUTH=1 — admin authentication disabled")
 
 # ── Bootstrap DB ─────────────────────────────────────────────────────────────
 
 def _migrate_db():
-    """Ajoute les colonnes manquantes sans toucher aux données existantes."""
+    """Add missing columns without touching existing data."""
     existing = [c["name"] for c in sa_inspect(engine).get_columns("songs")]
     with engine.connect() as conn:
         if "chords" not in existing:
             conn.execute(text("ALTER TABLE songs ADD COLUMN chords TEXT"))
             conn.commit()
+        if "state" not in existing:
+            conn.execute(text("ALTER TABLE songs ADD COLUMN state VARCHAR(20)"))
+            conn.commit()
+        for col, sql_type in (("genre", "VARCHAR(50)"), ("year", "INTEGER"), ("language", "VARCHAR(30)")):
+            if col not in existing:
+                conn.execute(text(f"ALTER TABLE songs ADD COLUMN {col} {sql_type}"))
+                conn.commit()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -70,21 +90,24 @@ class ConnectionManager:
     async def broadcast(self, data: dict):
         message = json.dumps(data)
         dead = []
-        for ws in self.active:
+        # Iterate over a copy: a client can disconnect (and remove itself) mid-broadcast
+        for ws in list(self.active):
             try:
                 await ws.send_text(message)
             except Exception:
                 dead.append(ws)
         for ws in dead:
-            self.active.remove(ws)
+            self.disconnect(ws)
 
 manager = ConnectionManager()
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def check_admin(authorization: str = Header(None)):
+    if AUTH_DISABLED:
+        return
     if authorization != f"Bearer {ADMIN_TOKEN}":
-        raise HTTPException(status_code=401, detail="Non autorisé")
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
 def songs_with_votes(db: Session) -> List[dict]:
     songs = db.query(Song).order_by(Song.position).all()
@@ -98,6 +121,10 @@ def songs_with_votes(db: Session) -> List[dict]:
             "lyrics": s.lyrics,
             "chords": s.chords,
             "position": s.position,
+            "state": s.state,
+            "genre": s.genre,
+            "year": s.year,
+            "language": s.language,
             "votes": count,
         })
     return result
@@ -109,6 +136,24 @@ def get_songs(db: Session = Depends(get_db)):
     return songs_with_votes(db)
 
 
+def active_vote_count(db: Session, session_id: str) -> int:
+    """Votes of this session on songs not yet played (the ones that count toward the limit)."""
+    return (
+        db.query(func.count(Vote.id))
+          .join(Song, Song.id == Vote.song_id)
+          .filter(Vote.session_id == session_id, Song.state.is_(None))
+          .scalar()
+    )
+
+
+@app.get("/my-votes")
+def get_my_votes(db: Session = Depends(get_db), session_id: str = Cookie(default=None)):
+    if not session_id:
+        return {"voted_ids": [], "limit": VOTES_PER_SESSION}
+    voted = db.query(Vote.song_id).filter(Vote.session_id == session_id).all()
+    return {"voted_ids": [v[0] for v in voted], "limit": VOTES_PER_SESSION}
+
+
 @app.post("/vote/{song_id}", status_code=201)
 async def vote(
     song_id: int,
@@ -117,20 +162,33 @@ async def vote(
     db: Session = Depends(get_db),
     session_id: str = Cookie(default=None)
 ):
-    # Créer un cookie de session si absent
+    # Create a session cookie if missing
     if not session_id:
         session_id = str(uuid.uuid4())
 
     song = db.query(Song).filter(Song.id == song_id).first()
     if not song:
         raise HTTPException(status_code=404, detail="Canción no encontrada")
+    if song.state in ("now_playing", "played"):
+        raise HTTPException(status_code=409, detail="Canción ya tocada")
 
-    # Vérifier si cette session a déjà voté
-    existing = db.query(Vote).filter(Vote.session_id == session_id).first()
+    # Check whether this session has already voted for this specific song
+    existing = db.query(Vote).filter(
+        Vote.session_id == session_id,
+        Vote.song_id == song_id
+    ).first()
     if existing:
         resp = JSONResponse(
             status_code=409,
-            content={"ok": False, "already_voted": True, "voted_for": existing.song_id}
+            content={"ok": False, "already_voted": True, "voted_for": song_id}
+        )
+        resp.set_cookie("session_id", session_id, max_age=86400 * 30, httponly=True, samesite="lax")
+        return resp
+
+    if active_vote_count(db, session_id) >= VOTES_PER_SESSION:
+        resp = JSONResponse(
+            status_code=409,
+            content={"ok": False, "limit_reached": True, "limit": VOTES_PER_SESSION}
         )
         resp.set_cookie("session_id", session_id, max_age=86400 * 30, httponly=True, samesite="lax")
         return resp
@@ -144,6 +202,60 @@ async def vote(
     return resp
 
 
+@app.delete("/vote/{song_id}", status_code=204)
+async def unvote(song_id: int, db: Session = Depends(get_db), session_id: str = Cookie(default=None)):
+    """Take a vote back (only while the song has not been played)."""
+    if not session_id:
+        raise HTTPException(status_code=404, detail="No vote to remove")
+    song = db.query(Song).filter(Song.id == song_id).first()
+    if not song:
+        raise HTTPException(status_code=404, detail="Canción no encontrada")
+    if song.state in ("now_playing", "played"):
+        raise HTTPException(status_code=409, detail="Canción ya tocada")
+    vote = db.query(Vote).filter(Vote.session_id == session_id, Vote.song_id == song_id).first()
+    if not vote:
+        raise HTTPException(status_code=404, detail="No vote to remove")
+    db.delete(vote)
+    db.commit()
+    await manager.broadcast({"event": "votes_update", "songs": songs_with_votes(db)})
+    return Response(status_code=204)
+
+
+_proposal_last_ts = defaultdict(float)   # IP → last submission (anti-spam)
+
+def _slug_title(s: str) -> str:
+    s = unicodedata.normalize("NFD", s.strip().lower())
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9]+", "-", s).strip("-")[:200] or "untitled"
+
+
+@app.post("/proposals", status_code=201)
+async def create_proposal(body: ProposalCreate, request: Request, db: Session = Depends(get_db)):
+    title = body.title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Título vacío")
+
+    # 1 suggestion / 30 s per IP
+    ip = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip() or request.client.host
+    now = time.time()
+    if now - _proposal_last_ts[ip] < 30:
+        raise HTTPException(status_code=429, detail="Espera un poco antes de sugerir otra")
+    _proposal_last_ts[ip] = now
+
+    # Same title already suggested → increment its count
+    slug = _slug_title(title)
+    proposal = db.query(Proposal).filter(Proposal.slug == slug).first()
+    if proposal:
+        proposal.count += 1
+    else:
+        proposal = Proposal(title=title, slug=slug, count=1)
+        db.add(proposal)
+    db.commit()
+    # Content-free signal: the interpreter view reloads the list with its token
+    await manager.broadcast({"event": "proposals_update"})
+    return {"ok": True}
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket, db: Session = Depends(get_db)):
     await manager.connect(ws)
@@ -154,6 +266,130 @@ async def websocket_endpoint(ws: WebSocket, db: Session = Depends(get_db)):
     except WebSocketDisconnect:
         manager.disconnect(ws)
 
+# ── Online enrichment (lyrics, chords, style/year/language, photo) ────────────
+
+ENRICH_STEPS = ("lyrics", "photo", "chords", "info")
+# song id → {"running": bool, "finished_at": float|None, <step>: state}
+# step states: "pending", "searching", "found", "partial" (info: some fields),
+#              "had" (already filled), "not_found", "error"
+enrich_status: dict = {}
+_enrich_slots = asyncio.Semaphore(2)   # songs searched at the same time (the sources rate-limit)
+
+
+class _SongGone(Exception):
+    pass
+
+
+def _queue_enrich(song_id: int, background_tasks: BackgroundTasks):
+    if enrich_status.get(song_id, {}).get("running"):
+        return
+    # Forget results older than an hour
+    for sid, st in list(enrich_status.items()):
+        if not st["running"] and time.time() - st["finished_at"] > 3600:
+            del enrich_status[sid]
+    enrich_status[song_id] = {"running": True, "finished_at": None, **{s: "pending" for s in ENRICH_STEPS}}
+    background_tasks.add_task(_enrich_song, song_id)
+
+
+async def _save_song(song_id: int, fill: dict = None, rename: dict = None, event: str = "song_enriched"):
+    """Write what was found, without overwriting anything set in the meantime.
+
+    fill:   fields written only if still empty
+    rename: {"title": (typed, canonical)}: written only if the value is still the typed one
+    """
+    db = SessionLocal()
+    try:
+        song = db.query(Song).filter(Song.id == song_id).first()
+        if not song:
+            raise _SongGone()
+        for field, value in (fill or {}).items():
+            if value and not getattr(song, field):
+                setattr(song, field, value)
+        for field, (typed, canonical) in (rename or {}).items():
+            if getattr(song, field) == typed:
+                setattr(song, field, canonical)
+        db.commit()
+        await manager.broadcast({"event": event, "songs": songs_with_votes(db)})
+    finally:
+        db.close()
+
+
+async def _enrich_song(song_id: int):
+    status = enrich_status[song_id]
+    db = SessionLocal()
+    song = db.query(Song).filter(Song.id == song_id).first()
+    db.close()
+    if not song:
+        status.update(running=False, finished_at=time.time())
+        return
+    found = {"lyrics": song.lyrics, "chords": song.chords, "genre": song.genre,
+             "year": song.year, "language": song.language}
+    names = {"title": song.title, "artist": song.artist}
+
+    async def lyrics_step():
+        if found["lyrics"]:
+            return "had"
+        lyrics, _, track, artist = await asyncio.to_thread(enrich.find_lyrics, names["artist"], names["title"])
+        if not lyrics:
+            return "not_found"
+        found["lyrics"] = lyrics
+        # Same title/artist apart from case and punctuation: use the source's spelling
+        rename = {}
+        for field, canonical in (("title", track), ("artist", artist)):
+            if canonical and canonical != names[field] and enrich.norm(canonical) == enrich.norm(names[field]):
+                rename[field] = (names[field], canonical)
+                names[field] = canonical
+        await _save_song(song_id, fill={"lyrics": lyrics}, rename=rename)
+        return "found"
+
+    async def photo_step():
+        path = enrich.photo_path(names["artist"])
+        if path and os.path.exists(path):
+            return "had"
+        if not await asyncio.to_thread(enrich.save_artist_photo, names["artist"]):
+            return "not_found"
+        await _save_song(song_id, event="photo_added")   # audience pages reload the photos
+        return "found"
+
+    async def chords_step():
+        if found["chords"]:
+            return "had"
+        chords, _ = await asyncio.to_thread(enrich.find_chords, names["artist"], names["title"])
+        if not chords:
+            return "not_found"
+        await _save_song(song_id, fill={"chords": chords})
+        return "found"
+
+    async def info_step():
+        if found["genre"] and found["year"] and found["language"]:
+            return "had"
+        fill = {}
+        if not found["language"]:
+            fill["language"] = enrich.detect_language(found["lyrics"])
+        if not (found["year"] and found["genre"]):
+            fill["year"], fill["genre"] = await asyncio.to_thread(enrich.find_year_and_style, names["artist"], names["title"])
+        if not any(fill.values()):
+            return "not_found"
+        await _save_song(song_id, fill=fill)
+        complete = all(found[f] or fill.get(f) for f in ("genre", "year", "language"))
+        return "found" if complete else "partial"
+
+    steps = {"lyrics": lyrics_step, "photo": photo_step, "chords": chords_step, "info": info_step}
+    async with _enrich_slots:
+        for name in ENRICH_STEPS:
+            status[name] = "searching"
+            try:
+                status[name] = await steps[name]()
+            except _SongGone:
+                break
+            except Exception as exc:
+                logger.error("Enrich %s failed for song %d: %s", name, song_id, exc)
+                status[name] = "error"
+    status.update(running=False, finished_at=time.time())
+    logger.info("Enriched song %d (%s — %s): %s", song_id, names["title"], names["artist"],
+                {s: status[s] for s in ENRICH_STEPS})
+
+
 # ── Admin routes ──────────────────────────────────────────────────────────────
 
 @app.get("/admin/songs")
@@ -162,13 +398,38 @@ def admin_get_songs(db: Session = Depends(get_db), _=Depends(check_admin)):
 
 
 @app.post("/admin/songs", status_code=201)
-async def admin_add_song(body: SongCreate, db: Session = Depends(get_db), _=Depends(check_admin)):
-    song = Song(**body.model_dump())
+async def admin_add_song(body: SongCreate, background_tasks: BackgroundTasks,
+                         db: Session = Depends(get_db), _=Depends(check_admin)):
+    data = body.model_dump()
+    data["title"], data["artist"] = data["title"].strip(), data["artist"].strip()
+    if not data["title"] or not data["artist"]:
+        raise HTTPException(status_code=400, detail="Titulo y artista requeridos")
+    # Artist already in the catalog: reuse its spelling (one group, one photo)
+    for (existing,) in db.query(Song.artist).distinct():
+        if enrich.norm(existing) == enrich.norm(data["artist"]):
+            data["artist"] = existing
+            break
+    for other in db.query(Song).filter(Song.artist == data["artist"]):
+        if enrich.title_key(other.title) == enrich.title_key(data["title"]):
+            raise HTTPException(status_code=409, detail="Esa cancion ya esta en el catalogo")
+
+    song = Song(**data)
     db.add(song)
     db.commit()
     db.refresh(song)
     await manager.broadcast({"event": "votes_update", "songs": songs_with_votes(db)})
+    _queue_enrich(song.id, background_tasks)
     return song
+
+
+@app.post("/admin/songs/{song_id}/enrich", status_code=202)
+def admin_enrich_song(song_id: int, background_tasks: BackgroundTasks,
+                      db: Session = Depends(get_db), _=Depends(check_admin)):
+    """Search online for whatever the song is missing (lyrics, chords, info, photo)."""
+    if not db.query(Song).filter(Song.id == song_id).first():
+        raise HTTPException(status_code=404, detail="Cancion no encontrada")
+    _queue_enrich(song_id, background_tasks)
+    return enrich_status[song_id]
 
 
 @app.patch("/admin/songs/{song_id}")
@@ -220,7 +481,7 @@ async def admin_update_lyrics(song_id: int, body: LyricsUpdate, db: Session = De
 async def admin_reset_votes(db: Session = Depends(get_db), _=Depends(check_admin)):
     db.query(Vote).delete()
     db.commit()
-    # Broadcast avec reset_token pour que les clients effacent leur cookie de vote
+    # Broadcast with reset_token so clients clear their vote cookie
     reset_token = str(uuid.uuid4())
     await manager.broadcast({
         "event": "votes_reset",
@@ -228,6 +489,57 @@ async def admin_reset_votes(db: Session = Depends(get_db), _=Depends(check_admin
         "songs": songs_with_votes(db)
     })
     return {"ok": True, "reset_token": reset_token}
+
+
+# ── Now playing ───────────────────────────────────────────────────────────────
+
+def _finish_now_playing(db: Session):
+    """The song currently playing becomes "played"."""
+    db.query(Song).filter(Song.state == "now_playing").update({"state": "played"})
+
+
+@app.post("/admin/songs/{song_id}/now-playing")
+async def admin_set_now_playing(song_id: int, db: Session = Depends(get_db), _=Depends(check_admin)):
+    song = db.query(Song).filter(Song.id == song_id).first()
+    if not song:
+        raise HTTPException(status_code=404, detail="Canción no encontrada")
+    _finish_now_playing(db)
+    song.state = "now_playing"
+    db.commit()
+    await manager.broadcast({"event": "now_playing", "songs": songs_with_votes(db)})
+    return {"ok": True}
+
+
+@app.post("/admin/now-playing/stop")
+async def admin_stop_now_playing(db: Session = Depends(get_db), _=Depends(check_admin)):
+    _finish_now_playing(db)
+    db.commit()
+    await manager.broadcast({"event": "now_playing", "songs": songs_with_votes(db)})
+    return {"ok": True}
+
+
+@app.post("/admin/played/reset")
+async def admin_reset_played(db: Session = Depends(get_db), _=Depends(check_admin)):
+    """New show: every song can be voted on again."""
+    db.query(Song).update({"state": None})
+    db.commit()
+    await manager.broadcast({"event": "now_playing", "songs": songs_with_votes(db)})
+    return {"ok": True}
+
+
+# ── Proposals (admin) ─────────────────────────────────────────────────────────
+
+@app.get("/admin/proposals")
+def admin_get_proposals(db: Session = Depends(get_db), _=Depends(check_admin)):
+    proposals = db.query(Proposal).order_by(Proposal.count.desc(), Proposal.created_at).all()
+    return [{"id": p.id, "title": p.title, "count": p.count} for p in proposals]
+
+
+@app.delete("/admin/proposals/{proposal_id}", status_code=204)
+async def admin_delete_proposal(proposal_id: int, db: Session = Depends(get_db), _=Depends(check_admin)):
+    db.query(Proposal).filter(Proposal.id == proposal_id).delete()
+    db.commit()
+    await manager.broadcast({"event": "proposals_update"})
 
 
 @app.get("/admin/stats")
@@ -238,6 +550,7 @@ def admin_stats(db: Session = Depends(get_db), _=Depends(check_admin)):
         "total_votes": total_votes,
         "connected_clients": connected,
         "songs": songs_with_votes(db),
+        "enrich": enrich_status,
     }
 
 
@@ -291,96 +604,37 @@ def search_chartlyrics_list(query: str) -> list:
 
 # ── Ultimate Guitar (chords) ─────────────────────────────────────────────────
 
-UG_HEADERS = {
-    "User-Agent": "UGT_ANDROID/5.10.12 (10)",
-    "Accept": "application/json",
-    "Accept-Language": "en-US,en;q=0.9",
-}
-
-def ug_search(artist: str, title: str) -> list:
-    """Recherche les chord tabs sur Ultimate Guitar.
-
-    Returns:
-        list: résultats trouvés.
-    Raises:
-        RuntimeError: si l'API UG est injoignable ou renvoie une erreur.
-    """
-    query = urllib.parse.quote(f"{artist} {title}")
-    url = (
-        f"https://api.ultimate-guitar.com/api/v1/tab/search"
-        f"?q={query}&type[]=Chords&page=1&official[]=0"
-    )
-    req = urllib.request.Request(url, headers=UG_HEADERS)
-    try:
-        with urllib.request.urlopen(req, timeout=10) as r:
-            raw = r.read().decode("utf-8")
-            data = json.loads(raw)
-    except Exception as exc:
-        logger.error("UG API error for '%s %s': %s", artist, title, exc)
-        raise RuntimeError(f"UG API injoignable : {exc}") from exc
-    tabs = data.get("tabs", [])
-    logger.info(
-        "UG search '%s %s' → %d tabs, types: %s",
-        artist, title, len(tabs),
-        list({t.get("type") for t in tabs})
-    )
-    results = []
-    for t in tabs[:8]:
-        if t.get("type") == "Chords":
-            results.append({
-                "id": t.get("id"),
-                "song_name": t.get("song_name", ""),
-                "artist_name": t.get("artist_name", ""),
-                "rating": t.get("rating", 0),
-                "votes": t.get("votes", 0),
-                "tonality": t.get("tonality_name", ""),
-                "difficulty": t.get("difficulty", ""),
-            })
-    logger.info("UG search '%s %s' → %d chords results", artist, title, len(results))
-    return results
-
-
-def ug_fetch_tab(tab_id: int) -> str:
-    """Récupère le contenu d'un tab UG et nettoie le format propriétaire."""
-    try:
-        url = f"https://api.ultimate-guitar.com/api/v1/tab/info?id={tab_id}"
-        req = urllib.request.Request(url, headers=UG_HEADERS)
-        with urllib.request.urlopen(req, timeout=10) as r:
-            data = json.loads(r.read().decode("utf-8"))
-        content = (
-            data.get("tab_view", {})
-                .get("wiki_tab", {})
-                .get("content", "")
-        )
-        if not content:
-            return ""
-        # Nettoyer le format UG : [ch]Am[/ch] → Am, [tab]...[/tab] → ...
-        content = re.sub(r"\[ch\](.*?)\[/ch\]", r"\1", content)
-        content = re.sub(r"\[tab\]|\[/tab\]", "", content)
-        content = re.sub(r"\[/?[a-z]+\]", "", content)  # autres balises éventuelles
-        return content.strip()
-    except Exception:
-        return ""
-
-
 @app.get("/admin/chords/search")
 def chords_search(artist: str, title: str, _=Depends(check_admin)):
     if not artist or not title:
-        raise HTTPException(status_code=400, detail="artist et title requis")
+        raise HTTPException(status_code=400, detail="artist and title are required")
     try:
         results = ug_search(artist, title)
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     if not results:
-        raise HTTPException(status_code=404, detail="Aucun résultat sur Ultimate Guitar")
+        raise HTTPException(status_code=404, detail="No results on Ultimate Guitar")
     return results
 
 
+@app.get("/admin/chords/top")
+def chords_top(page: int = 1, _=Depends(check_admin)):
+    """UG's most viewed chord tabs of all time, 50 per page."""
+    try:
+        return enrich.ug_top(page)
+    except Exception as exc:
+        logger.error("UG explore error (page %d): %s", page, exc)
+        raise HTTPException(status_code=502, detail=f"Ultimate Guitar unreachable: {exc}")
+
+
 @app.get("/admin/chords/fetch")
-def chords_fetch(tab_id: int, _=Depends(check_admin)):
-    content = ug_fetch_tab(tab_id)
+def chords_fetch(url: str, _=Depends(check_admin)):
+    # Only UG tab pages: this endpoint must not fetch arbitrary URLs
+    if not UG_TAB_URL.match(url):
+        raise HTTPException(status_code=400, detail="Not an Ultimate Guitar tab URL")
+    content = ug_fetch_tab(url)
     if not content:
-        raise HTTPException(status_code=404, detail="Contenu introuvable")
+        raise HTTPException(status_code=404, detail="Content not found")
     return {"chords": content}
 
 
@@ -400,7 +654,7 @@ def chartlyrics_search(q: str, _=Depends(check_admin)):
 def chartlyrics_lyrics(artist: str, title: str, _=Depends(check_admin)):
     lyrics = search_chartlyrics(artist, title)
     if not lyrics:
-        raise HTTPException(status_code=404, detail="Paroles introuvables sur ChartLyrics")
+        raise HTTPException(status_code=404, detail="Lyrics not found on ChartLyrics")
     return {"lyrics": lyrics}
 
 
@@ -415,3 +669,7 @@ def root():
 @app.get("/admin-panel")
 def admin_panel():
     return FileResponse("static/admin.html")
+
+@app.get("/interpreter")
+def interpreter_view():
+    return FileResponse("static/interpreter.html")
